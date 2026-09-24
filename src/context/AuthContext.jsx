@@ -10,9 +10,10 @@ export const INITIAL_ATHLETES = [
     email: 'carlos@hiftbox.com',
     password: '1234',
     role: 'athlete',
-    membership: 'Gimnasio & CrossFit',
+    membership: 'CrossFit Competitors Elite',
+    accessZones: ['competitors', 'traditional'],
     avatar: 'CM',
-    focus: 'Hipertrofia & Fuerza Pesada'
+    focus: 'Halterofilia & WODs de Alta Intensidad'
   },
   {
     id: 'user-athlete-2',
@@ -21,9 +22,10 @@ export const INITIAL_ATHLETES = [
     email: 'laura@hiftbox.com',
     password: '1234',
     role: 'athlete',
-    membership: 'Gimnasio Musculación',
+    membership: 'Fitness & Musculación General',
+    accessZones: ['traditional'],
     avatar: 'LG',
-    focus: 'Pierna, Glúteo & Full Body'
+    focus: 'Hipertrofia, Pierna & Glúteo'
   },
   {
     id: 'user-athlete-3',
@@ -32,9 +34,10 @@ export const INITIAL_ATHLETES = [
     email: 'mateo@hiftbox.com',
     password: '1234',
     role: 'athlete',
-    membership: 'Gimnasio & Acondicionamiento',
+    membership: 'Pase Total Box & Gym',
+    accessZones: ['competitors', 'traditional'],
     avatar: 'MR',
-    focus: 'Espalda, Hombros & WODs'
+    focus: 'Acondicionamiento Físico & Fuerza'
   }
 ];
 
@@ -46,6 +49,7 @@ export const COACH_USER = {
   password: '1234',
   role: 'admin',
   membership: 'Head Coach & Administrador',
+  accessZones: ['competitors', 'traditional'],
   avatar: 'HC'
 };
 
@@ -149,6 +153,7 @@ export function AuthProvider({ children }) {
       password: '1234',
       role: 'athlete',
       membership: 'Gimnasio Personalizado',
+      accessZones: ['traditional'],
       avatar: initials,
       focus: focus
     };
@@ -157,12 +162,31 @@ export function AuthProvider({ children }) {
     return newAthlete;
   };
 
+  // Check if current user has access to a specific zone ('competitors' | 'traditional')
+  const canAccessZone = (zone) => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'admin') return true;
+    
+    // Explicit accessZones array or membership title inference
+    if (currentUser.accessZones && Array.isArray(currentUser.accessZones)) {
+      return currentUser.accessZones.includes(zone);
+    }
+    
+    const membershipName = (currentUser.membership || '').toLowerCase();
+    if (membershipName.includes('crossfit') || membershipName.includes('competitor') || membershipName.includes('total')) {
+      return true; // Has access to both
+    }
+
+    return zone === 'traditional';
+  };
+
   return (
     <AuthContext.Provider value={{
       currentUser,
       athletes,
       isAuthenticated: !!currentUser,
       isAdmin: currentUser?.role === 'admin',
+      canAccessZone,
       loginWithCredentials,
       logout,
       addAthlete,

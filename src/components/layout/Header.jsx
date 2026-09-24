@@ -4,9 +4,14 @@ import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
 import { LogOut, Shield } from 'lucide-react';
 
-export default function Header({ onOpenAuth }) {
+export default function Header() {
   const { currentUser, isAdmin, logout } = useAuth();
-  const { customLogoUrl } = useWorkouts();
+  const { customLogoUrl, activeZone, setActiveZone, setActiveWorkoutDetail } = useWorkouts();
+
+  const handleReturnToHub = () => {
+    setActiveWorkoutDetail(null);
+    setActiveZone('dashboard');
+  };
 
   return (
     <header style={{
@@ -24,7 +29,33 @@ export default function Header({ onOpenAuth }) {
       zIndex: 40
     }}>
       {/* Brand Logo & Name */}
-      <BrandLogo size="sm" customLogoUrl={customLogoUrl} showTagline={false} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div onClick={handleReturnToHub} style={{ cursor: 'pointer' }}>
+          <BrandLogo size="sm" customLogoUrl={customLogoUrl} showTagline={false} />
+        </div>
+
+        {activeZone !== 'dashboard' && (
+          <button
+            onClick={handleReturnToHub}
+            style={{
+              fontSize: '10px',
+              fontWeight: '800',
+              padding: '2px 8px',
+              borderRadius: 'var(--radius-full)',
+              background: activeZone === 'competitors' 
+                ? 'rgba(255, 45, 120, 0.15)' 
+                : 'rgba(168, 85, 247, 0.15)',
+              border: activeZone === 'competitors' 
+                ? '1px solid rgba(255, 45, 120, 0.3)' 
+                : '1px solid rgba(168, 85, 247, 0.3)',
+              color: activeZone === 'competitors' ? 'var(--brand-pink)' : 'var(--brand-lilac-light)',
+              cursor: 'pointer'
+            }}
+          >
+            {activeZone === 'competitors' ? '⚡ Competidores' : '🏋️ Gimnasio'}
+          </button>
+        )}
+      </div>
 
       {/* User Avatar & Logout */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
