@@ -6,19 +6,19 @@ import {
   Award, 
   Layers, 
   Play, 
-  Plus, 
   CheckCircle2, 
   Clock, 
-  Sparkles,
-  TrendingUp,
-  Dumbbell
+  Calendar as CalendarIcon,
+  TableProperties,
+  Zap,
+  ChevronRight
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
 import BaseCalendar from '../../components/shared/BaseCalendar';
 import ProtectedZoneGate from '../../components/shared/ProtectedZoneGate';
 import PerformanceModal from '../../components/shared/PerformanceModal';
-import PRTracker from '../../components/athlete/PRTracker';
+import RoutineCard from '../../components/athlete/RoutineCard';
 
 export default function CompetitorsView({ onOpenTimerWithPreset }) {
   const { canAccessZone } = useAuth();
@@ -28,12 +28,11 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
     competitorDayWorkout, 
     selectedDay, 
     setSelectedDay,
-    setActiveWorkoutDetail,
-    performanceLogs
+    setActiveWorkoutDetail
   } = useWorkouts();
 
-  // Sub-tabs: 'session' | 'prs' | 'logs'
-  const [activeSubTab, setActiveSubTab] = useState('session');
+  // The 3 required user tabs: 'daily_session' | 'calendar' | 'table_workouts'
+  const [activeMenuTab, setActiveMenuTab] = useState('daily_session');
   const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
   const [selectedExerciseForModal, setSelectedExerciseForModal] = useState('');
 
@@ -48,6 +47,10 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
     return acc;
   }, {});
 
+  // Today's workout (determined by today's day)
+  const todayId = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date().getDay()] || 'mon';
+  const todaysWorkout = competitorWorkouts.find(w => w.dayId === todayId) || competitorDayWorkout || competitorWorkouts[0];
+
   const handleOpenPerformanceModal = (exerciseName = '') => {
     setSelectedExerciseForModal(exerciseName);
     setIsPerformanceModalOpen(true);
@@ -55,7 +58,7 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      {/* Top Navigation & Breadcrumb */}
+      {/* Top Header & Breadcrumb */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -82,35 +85,24 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
           <span>Cambiar de Zona</span>
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{
-            fontSize: '11px',
-            fontWeight: '800',
-            color: 'var(--brand-pink)',
-            background: 'rgba(255, 45, 120, 0.12)',
-            border: '1px solid rgba(255, 45, 120, 0.25)',
-            padding: '3px 10px',
-            borderRadius: 'var(--radius-full)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px'
-          }}>
-            <Flame size={12} color="var(--brand-pink)" />
-            <span>CROSSFIT ATLETAS</span>
-          </span>
-        </div>
+        <span style={{
+          fontSize: '11px',
+          fontWeight: '800',
+          color: 'var(--brand-pink)',
+          background: 'rgba(255, 45, 120, 0.12)',
+          border: '1px solid rgba(255, 45, 120, 0.25)',
+          padding: '3px 10px',
+          borderRadius: 'var(--radius-full)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px'
+        }}>
+          <Flame size={12} color="var(--brand-pink)" />
+          <span>ZONA COMPETIDOR</span>
+        </span>
       </div>
 
-      {/* Interactive Base Calendar */}
-      <BaseCalendar 
-        selectedDay={selectedDay}
-        onSelectDay={setSelectedDay}
-        zone="competitors"
-        workoutMap={competitorWorkoutMap}
-        title="Calendario Competidores"
-      />
-
-      {/* Sub-tabs Selector */}
+      {/* 3 Main Required Menu Tabs */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 1fr 1fr',
@@ -121,70 +113,76 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
         border: '1px solid var(--border-subtle)'
       }}>
         <button
-          onClick={() => setActiveSubTab('session')}
+          onClick={() => setActiveMenuTab('daily_session')}
           style={{
-            padding: '8px 10px',
+            padding: '9px 6px',
             borderRadius: 'var(--radius-full)',
-            fontSize: '11.5px',
+            fontSize: '11px',
             fontWeight: '800',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '6px',
-            background: activeSubTab === 'session' ? 'linear-gradient(135deg, #ff2d78 0%, #a855f7 100%)' : 'transparent',
-            color: activeSubTab === 'session' ? '#ffffff' : 'var(--text-secondary)',
+            gap: '5px',
+            background: activeMenuTab === 'daily_session' ? 'linear-gradient(135deg, #ff2d78 0%, #a855f7 100%)' : 'transparent',
+            color: activeMenuTab === 'daily_session' ? '#ffffff' : 'var(--text-secondary)',
+            border: 'none',
+            cursor: 'pointer',
             transition: 'all var(--transition-fast)'
           }}
         >
-          <Layers size={13} />
-          <span>Sesión del Día</span>
+          <Zap size={13} />
+          <span>Sesión Diaria</span>
         </button>
 
         <button
-          onClick={() => setActiveSubTab('prs')}
+          onClick={() => setActiveMenuTab('calendar')}
           style={{
-            padding: '8px 10px',
+            padding: '9px 6px',
             borderRadius: 'var(--radius-full)',
-            fontSize: '11.5px',
+            fontSize: '11px',
             fontWeight: '800',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '6px',
-            background: activeSubTab === 'prs' ? 'linear-gradient(135deg, #ff2d78 0%, #a855f7 100%)' : 'transparent',
-            color: activeSubTab === 'prs' ? '#ffffff' : 'var(--text-secondary)',
+            gap: '5px',
+            background: activeMenuTab === 'calendar' ? 'linear-gradient(135deg, #ff2d78 0%, #a855f7 100%)' : 'transparent',
+            color: activeMenuTab === 'calendar' ? '#ffffff' : 'var(--text-secondary)',
+            border: 'none',
+            cursor: 'pointer',
             transition: 'all var(--transition-fast)'
           }}
         >
-          <Award size={13} />
-          <span>PRs & Benchmarks</span>
+          <CalendarIcon size={13} />
+          <span>Calendario</span>
         </button>
 
         <button
-          onClick={() => setActiveSubTab('logs')}
+          onClick={() => setActiveMenuTab('table_workouts')}
           style={{
-            padding: '8px 10px',
+            padding: '9px 6px',
             borderRadius: 'var(--radius-full)',
-            fontSize: '11.5px',
+            fontSize: '11px',
             fontWeight: '800',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '6px',
-            background: activeSubTab === 'logs' ? 'linear-gradient(135deg, #ff2d78 0%, #a855f7 100%)' : 'transparent',
-            color: activeSubTab === 'logs' ? '#ffffff' : 'var(--text-secondary)',
+            gap: '5px',
+            background: activeMenuTab === 'table_workouts' ? 'linear-gradient(135deg, #ff2d78 0%, #a855f7 100%)' : 'transparent',
+            color: activeMenuTab === 'table_workouts' ? '#ffffff' : 'var(--text-secondary)',
+            border: 'none',
+            cursor: 'pointer',
             transition: 'all var(--transition-fast)'
           }}
         >
-          <TrendingUp size={13} />
-          <span>Historial ({performanceLogs.filter(l => l.zone === 'competitors').length})</span>
+          <TableProperties size={13} />
+          <span>Tabla Entrenos</span>
         </button>
       </div>
 
-      {/* TAB 1: WORKOUT OF THE DAY */}
-      {activeSubTab === 'session' && (
+      {/* 1. SESIÓN DIARIA */}
+      {activeMenuTab === 'daily_session' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {competitorDayWorkout ? (
+          {todaysWorkout ? (
             <div style={{
               background: 'var(--bg-secondary)',
               border: '1px solid var(--border-subtle)',
@@ -193,10 +191,8 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
               display: 'flex',
               flexDirection: 'column',
               gap: '14px',
-              boxShadow: 'var(--shadow-md)',
-              position: 'relative'
+              boxShadow: 'var(--shadow-md)'
             }}>
-              {/* Header Info */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                   <span style={{
@@ -208,123 +204,73 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
                     borderRadius: 'var(--radius-full)',
                     textTransform: 'uppercase'
                   }}>
-                    {competitorDayWorkout.type}
+                    {todaysWorkout.type}
                   </span>
 
-                  <span style={{
-                    fontSize: '11px',
-                    color: 'var(--text-muted)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Clock size={12} />
-                    {competitorDayWorkout.duration}
+                    {todaysWorkout.duration}
                   </span>
                 </div>
 
                 <h2 style={{ fontSize: '18px', fontWeight: '900', color: '#ffffff', lineHeight: 1.3 }}>
-                  {competitorDayWorkout.title}
+                  {todaysWorkout.title}
                 </h2>
-
-                <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginTop: '6px', lineHeight: 1.45 }}>
-                  {competitorDayWorkout.description}
+                <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  {todaysWorkout.description}
                 </p>
               </div>
 
-              {/* Blocks Preview List */}
+              {/* Sections summary */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Estructura de la Programación ({competitorDayWorkout.sections.length} Bloques)
+                <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                  Bloques a Realizar Hoy ({todaysWorkout.sections.length})
                 </span>
 
-                {competitorDayWorkout.sections.map((section, idx) => {
-                  const isMetcon = section.blockType === 'metcon_wod';
-                  const isOly = section.blockType === 'weightlifting';
-
-                  return (
-                    <div 
-                      key={idx}
-                      style={{
-                        background: 'var(--bg-surface)',
-                        border: isMetcon 
-                          ? '1px solid rgba(255, 45, 120, 0.35)' 
-                          : '1px solid var(--border-subtle)',
-                        borderRadius: 'var(--radius-md)',
-                        padding: '12px 14px',
+                {todaysWorkout.sections.map((sec, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      background: 'var(--bg-surface)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{
+                        width: '20px',
+                        height: '20px',
+                        borderRadius: '50%',
+                        background: 'var(--brand-pink)',
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: '900',
                         display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{
-                            width: '20px',
-                            height: '20px',
-                            borderRadius: '50%',
-                            background: isMetcon ? 'var(--brand-pink)' : (isOly ? '#eab308' : 'rgba(255, 255, 255, 0.1)'),
-                            color: '#ffffff',
-                            fontSize: '11px',
-                            fontWeight: '900',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            {idx + 1}
-                          </span>
-
-                          <span style={{ fontSize: '12.5px', fontWeight: '800', color: isMetcon ? 'var(--brand-pink)' : '#ffffff' }}>
-                            {section.name}
-                          </span>
-                        </div>
-
-                        {section.groupTimer && (
-                          <button
-                            onClick={() => onOpenTimerWithPreset && onOpenTimerWithPreset({
-                              type: section.groupTimer.type || 'rest',
-                              seconds: section.groupTimer.seconds,
-                              label: section.groupTimer.label
-                            })}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              background: 'rgba(255, 45, 120, 0.12)',
-                              border: '1px solid rgba(255, 45, 120, 0.25)',
-                              borderRadius: 'var(--radius-full)',
-                              padding: '3px 8px',
-                              fontSize: '10.5px',
-                              fontWeight: '700',
-                              color: 'var(--brand-pink)',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <Timer size={11} />
-                            <span>{Math.round(section.groupTimer.seconds / 60)} min</span>
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Exercises bullets */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px', paddingLeft: '26px' }}>
-                        {section.exercises.map((ex, exIdx) => (
-                          <div key={exIdx} style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            <strong style={{ color: '#ffffff' }}>{ex.name}</strong>
-                            {ex.rx && <span style={{ color: 'var(--brand-pink)', marginLeft: '6px', fontWeight: '700', fontSize: '11px' }}>[{ex.rx}]</span>}
-                            {ex.notes && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{ex.notes}</div>}
-                          </div>
-                        ))}
-                      </div>
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        {idx + 1}
+                      </span>
+                      <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#ffffff' }}>
+                        {sec.name}
+                      </span>
                     </div>
-                  );
-                })}
+
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {sec.exercises.length} ejercicios
+                    </span>
+                  </div>
+                ))}
               </div>
 
-              {/* Main Actions */}
+              {/* Actions */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
                 <button
-                  onClick={() => setActiveWorkoutDetail(competitorDayWorkout)}
+                  onClick={() => setActiveWorkoutDetail(todaysWorkout)}
                   className="btn-primary"
                   style={{
                     padding: '12px',
@@ -333,11 +279,11 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
                   }}
                 >
                   <Play size={14} />
-                  <span>Iniciar Sesión</span>
+                  <span>Empezar Entreno</span>
                 </button>
 
                 <button
-                  onClick={() => handleOpenPerformanceModal(competitorDayWorkout.title)}
+                  onClick={() => handleOpenPerformanceModal(todaysWorkout.title)}
                   style={{
                     padding: '12px',
                     fontSize: '12.5px',
@@ -359,96 +305,29 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
               </div>
             </div>
           ) : (
-            <div style={{
-              padding: '36px 16px',
-              textAlign: 'center',
-              background: 'var(--bg-secondary)',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px dashed var(--border-subtle)',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
-              <CheckCircle2 size={32} color="#22c55e" />
-              <div style={{ fontWeight: '800', color: '#ffffff' }}>Día de Descanso Programado</div>
-              <span style={{ fontSize: '12px' }}>Recuperación activa recomendada para atletas de competición.</span>
+            <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+              No hay sesión programada para hoy.
             </div>
           )}
         </div>
       )}
 
-      {/* TAB 2: PRS & BENCHMARKS */}
-      {activeSubTab === 'prs' && (
-        <div>
-          <PRTracker />
-        </div>
-      )}
+      {/* 2. CALENDARIO PROGRAMADO */}
+      {activeMenuTab === 'calendar' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <BaseCalendar 
+            selectedDay={selectedDay}
+            onSelectDay={setSelectedDay}
+            zone="competitors"
+            workoutMap={competitorWorkoutMap}
+            title="Calendario Semanal Competidores"
+          />
 
-      {/* TAB 3: LOGS & MARCAS */}
-      {activeSubTab === 'logs' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-            <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase' }}>
-              Historial de Marcas Competidores
-            </span>
-            <button
-              onClick={() => handleOpenPerformanceModal('')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                background: 'var(--brand-gradient)',
-                border: 'none',
-                borderRadius: 'var(--radius-full)',
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: '800',
-                color: '#ffffff',
-                cursor: 'pointer'
-              }}
-            >
-              <Plus size={12} />
-              <span>Añadir Registro</span>
-            </button>
-          </div>
-
-          {performanceLogs.filter(l => l.zone === 'competitors').length > 0 ? (
-            performanceLogs.filter(l => l.zone === 'competitors').map((log) => (
-              <div
-                key={log.id}
-                style={{
-                  background: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '12px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}
-              >
-                <div>
-                  <h4 style={{ fontSize: '13px', fontWeight: '800', color: '#ffffff' }}>{log.exerciseName}</h4>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px', fontSize: '11px', color: 'var(--text-muted)' }}>
-                    <span>{log.date}</span>
-                    {log.rpe && <span>• RPE {log.rpe}</span>}
-                    {log.notes && <span>• {log.notes}</span>}
-                  </div>
-                </div>
-
-                <div style={{
-                  fontSize: '13px',
-                  fontWeight: '900',
-                  color: 'var(--brand-pink)',
-                  background: 'rgba(255, 45, 120, 0.12)',
-                  padding: '4px 10px',
-                  borderRadius: 'var(--radius-sm)'
-                }}>
-                  {log.value}
-                </div>
-              </div>
-            ))
+          {competitorDayWorkout ? (
+            <RoutineCard 
+              workout={competitorDayWorkout} 
+              onSelect={(w) => setActiveWorkoutDetail(w)} 
+            />
           ) : (
             <div style={{
               padding: '30px 16px',
@@ -457,11 +336,32 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
               borderRadius: 'var(--radius-md)',
               border: '1px dashed var(--border-subtle)',
               color: 'var(--text-secondary)',
-              fontSize: '12.5px'
+              fontSize: '13px'
             }}>
-              No tienes marcas registradas todavía en la Zona de Competidores.
+              Día de descanso programado o recuperación activa.
             </div>
           )}
+        </div>
+      )}
+
+      {/* 3. TABLA DE ENTRENAMIENTOS (BIBLIOTECA COMPLETA) */}
+      {activeMenuTab === 'table_workouts' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+            <span style={{ fontSize: '11.5px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Biblioteca de Rutinas Competidores ({competitorWorkouts.length})
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {competitorWorkouts.map(workout => (
+              <RoutineCard 
+                key={workout.id} 
+                workout={workout} 
+                onSelect={(w) => setActiveWorkoutDetail(w)} 
+              />
+            ))}
+          </div>
         </div>
       )}
 
@@ -471,7 +371,7 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
         onClose={() => setIsPerformanceModalOpen(false)}
         initialExerciseName={selectedExerciseForModal}
         initialZone="competitors"
-        workoutId={competitorDayWorkout?.id || ''}
+        workoutId={todaysWorkout?.id || ''}
       />
     </div>
   );

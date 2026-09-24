@@ -8,29 +8,49 @@ export default function BottomNav({ activeTab, setActiveTab }) {
   const { activeZone, setActiveZone, setActiveWorkoutDetail } = useWorkouts();
 
   const handleTabClick = (tabId) => {
+    setActiveWorkoutDetail(null);
     if (tabId === 'hub') {
-      setActiveWorkoutDetail(null);
       setActiveZone('dashboard');
       setActiveTab('hub');
+    } else if (tabId === 'admin') {
+      setActiveTab('admin');
     } else {
-      setActiveWorkoutDetail(null);
       setActiveTab(tabId);
     }
   };
 
-  const isHubActive = activeTab === 'hub' || activeZone === 'dashboard';
+  const isHubActive = activeTab === 'hub' && activeZone === 'dashboard';
   const isWorkoutsActive = activeTab === 'workouts' && activeZone !== 'dashboard';
 
-  const tabs = [
+  const tabs = isAdmin ? [
+    { 
+      id: 'admin', 
+      label: 'Gestión Coach', 
+      icon: ShieldCheck,
+      isActive: activeTab === 'admin'
+    },
     { 
       id: 'hub', 
-      label: 'Zonas Hub', 
+      label: 'Elegir Zona', 
+      icon: LayoutGrid, 
+      isActive: isHubActive || (activeTab === 'workouts' && activeZone === 'dashboard')
+    },
+    { 
+      id: 'timer', 
+      label: 'Cronómetro', 
+      icon: Timer,
+      isActive: activeTab === 'timer'
+    }
+  ] : [
+    { 
+      id: 'hub', 
+      label: 'Elegir Zona', 
       icon: LayoutGrid, 
       isActive: isHubActive 
     },
     { 
       id: 'workouts', 
-      label: activeZone === 'competitors' ? 'Competidores' : 'Gimnasio', 
+      label: activeZone === 'competitors' ? 'Competidor' : 'Gimnasio', 
       icon: activeZone === 'competitors' ? Flame : Dumbbell,
       isActive: isWorkoutsActive 
     },
@@ -39,15 +59,7 @@ export default function BottomNav({ activeTab, setActiveTab }) {
       label: 'Cronómetro', 
       icon: Timer,
       isActive: activeTab === 'timer'
-    },
-    ...(isAdmin ? [
-      { 
-        id: 'admin', 
-        label: 'Admin Word', 
-        icon: ShieldCheck,
-        isActive: activeTab === 'admin'
-      }
-    ] : [])
+    }
   ];
 
   return (
@@ -82,7 +94,7 @@ export default function BottomNav({ activeTab, setActiveTab }) {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '7px 12px',
+              padding: '7px 14px',
               borderRadius: 'var(--radius-full)',
               background: isActive 
                 ? 'linear-gradient(135deg, rgba(255, 45, 120, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)' 

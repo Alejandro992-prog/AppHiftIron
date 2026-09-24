@@ -134,7 +134,7 @@ export function AuthProvider({ children }) {
     setCurrentUser(null);
   };
 
-  const addAthlete = (name, email = '', focus = 'Musculación General') => {
+  const addAthlete = (name, email = '', membershipZone = 'traditional', focus = 'Musculación General') => {
     const cleanName = name.trim();
     const username = cleanName.toLowerCase().split(' ')[0] + Math.floor(Math.random() * 90 + 10);
     const initials = cleanName
@@ -145,21 +145,49 @@ export function AuthProvider({ children }) {
       .substring(0, 2)
       .toUpperCase() || 'AL';
 
+    const athleteId = `user-athlete-${Date.now()}`;
+    const cleanEmail = email.trim().toLowerCase() || `${cleanName.toLowerCase().replace(/\s+/g, '')}@hiftbox.com`;
+    const isCompetitor = membershipZone === 'competitors';
+
     const newAthlete = {
-      id: `user-athlete-${Date.now()}`,
+      id: athleteId,
       username: username,
       name: cleanName,
-      email: email.trim().toLowerCase() || `${cleanName.toLowerCase().replace(/\s+/g, '')}@hiftbox.com`,
+      email: cleanEmail,
       password: '1234',
       role: 'athlete',
-      membership: 'Gimnasio Personalizado',
-      accessZones: ['traditional'],
+      membership: isCompetitor ? 'CrossFit Competitors' : 'Gimnasio Fitness',
+      accessZones: isCompetitor ? ['competitors', 'traditional'] : ['traditional'],
       avatar: initials,
-      focus: focus
+      focus: focus || (isCompetitor ? 'Halterofilia & WODs' : 'Hipertrofia & Fuerza'),
+      status: 'invited', // 'invited' | 'active'
+      invitedAt: new Date().toLocaleDateString('es-ES'),
+      inviteLink: `${window.location.origin}/?invite=${athleteId}`
     };
 
     setAthletes(prev => [...prev, newAthlete]);
     return newAthlete;
+  };
+
+  const completeProfile = (athleteId, profileData) => {
+    setAthletes(prev => prev.map(a => {
+      if (a.id === athleteId) {
+        return {
+          ...a,
+          ...profileData,
+          status: 'active'
+        };
+      }
+      return a;
+    }));
+
+    if (currentUser && currentUser.id === athleteId) {
+      setCurrentUser(prev => ({
+        ...prev,
+        ...profileData,
+        status: 'active'
+      }));
+    }
   };
 
   // Check if current user has access to a specific zone ('competitors' | 'traditional')
@@ -190,6 +218,7 @@ export function AuthProvider({ children }) {
       loginWithCredentials,
       logout,
       addAthlete,
+      completeProfile,
       setCurrentUser
     }}>
       {children}
