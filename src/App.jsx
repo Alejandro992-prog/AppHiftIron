@@ -29,12 +29,18 @@ function MainApp() {
   const [timerPreset, setTimerPreset] = useState(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-  // Sync default tab if user role changes
+  // When user logs in, ensure athletes always land on 'hub' (¿Qué vas a entrenar hoy? Competidor vs Gimnasio)
   useEffect(() => {
-    if (isAdmin && activeTab !== 'admin' && activeZone === 'dashboard') {
-      setActiveTab('admin');
+    if (currentUser) {
+      if (isAdmin) {
+        setActiveTab('admin');
+      } else {
+        setActiveTab('hub');
+        setActiveZone('dashboard');
+        setActiveWorkoutDetail(null);
+      }
     }
-  }, [isAdmin]);
+  }, [currentUser?.id, isAdmin, setActiveZone, setActiveWorkoutDetail]);
 
   // Check URL for invite token
   useEffect(() => {

@@ -38,14 +38,8 @@ const INITIAL_ATHLETE_PLANS = {
 export function WorkoutProvider({ children }) {
   const { currentUser } = useAuth();
 
-  // Navigation Zone: 'dashboard' | 'competitors' | 'traditional'
-  const [activeZone, setActiveZone] = useState(() => {
-    try {
-      return localStorage.getItem('hift_active_zone_v3') || 'dashboard';
-    } catch {
-      return 'dashboard';
-    }
-  });
+  // Navigation Zone: Always starts on 'dashboard' so the user always chooses Competidor vs Gimnasio first
+  const [activeZone, setActiveZone] = useState('dashboard');
 
   // Mode for Traditional Gym: 'muscle_groups' (Catálogo libre) vs 'coach_plan' (Plan personalizado asignado)
   const [viewMode, setViewMode] = useState('muscle_groups');
@@ -169,14 +163,16 @@ export function WorkoutProvider({ children }) {
     }
   });
 
-  // Persist active zone
+  // Clean up any stale activeZone from localStorage and reset to 'dashboard' on login
   useEffect(() => {
     try {
-      localStorage.setItem('hift_active_zone_v3', activeZone);
+      localStorage.removeItem('hift_active_zone_v3');
     } catch (e) {
       console.error(e);
     }
-  }, [activeZone]);
+    setActiveZone('dashboard');
+    setActiveWorkoutDetail(null);
+  }, [currentUser?.id]);
 
   // Persist athlete plans
   useEffect(() => {
