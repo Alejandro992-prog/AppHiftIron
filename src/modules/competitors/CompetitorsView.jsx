@@ -11,7 +11,8 @@ import {
   Calendar as CalendarIcon,
   TableProperties,
   Zap,
-  ChevronRight
+  ChevronRight,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
@@ -19,16 +20,23 @@ import BaseCalendar from '../../components/shared/BaseCalendar';
 import ProtectedZoneGate from '../../components/shared/ProtectedZoneGate';
 import PerformanceModal from '../../components/shared/PerformanceModal';
 import RoutineCard from '../../components/athlete/RoutineCard';
+import { shiftWeekKey } from '../../utils/weekManager';
 
 export default function CompetitorsView({ onOpenTimerWithPreset }) {
-  const { canAccessZone } = useAuth();
+  const { currentUser, canAccessZone } = useAuth();
   const { 
     setActiveZone, 
+    workouts,
     competitorWorkouts, 
     competitorDayWorkout, 
+    selectedWeek,
+    setSelectedWeek,
     selectedDay, 
     setSelectedDay,
-    setActiveWorkoutDetail
+    setActiveWorkoutDetail,
+    boxWeeklySchedule,
+    assignBoxWorkoutToDay,
+    copyBoxWeekPlan
   } = useWorkouts();
 
   // The 3 required user tabs: 'daily_session' | 'calendar' | 'table_workouts'
@@ -41,11 +49,16 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
     return <ProtectedZoneGate requiredZone="competitors" onReturnToDashboard={() => setActiveZone('dashboard')} />;
   }
 
-  // Map of days with competitor workouts
-  const competitorWorkoutMap = competitorWorkouts.reduce((acc, w) => {
-    acc[w.dayId] = w;
-    return acc;
-  }, {});
+  // Map of days with competitor workouts for this week
+  const competitorWorkoutMap = {};
+  ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].forEach(d => {
+    const scheduledId = boxWeeklySchedule[selectedWeek]?.[d];
+    if (scheduledId) {
+      competitorWorkoutMap[d] = workouts.find(w => w.id === scheduledId) || true;
+    } else {
+      competitorWorkoutMap[d] = competitorWorkouts.find(w => w.dayId === d) || true;
+    }
+  });
 
   // Today's workout (determined by today's day)
   const todayId = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date().getDay()] || 'mon';
@@ -318,10 +331,57 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
           <BaseCalendar 
             selectedDay={selectedDay}
             onSelectDay={setSelectedDay}
+            selectedWeek={selectedWeek}
+            onSelectWeek={setSelectedWeek}
             zone="competitors"
             workoutMap={competitorWorkoutMap}
             title="Calendario Semanal Competidores"
+            showWeekNavigator={true}
+            showCopyButton={currentUser?.role === 'admin' || currentUser?.role === 'coach'}
+            onCopyWeekToNext={() => copyBoxWeekPlan(selectedWeek, shiftWeekKey(selectedWeek, 1))}
           />
+
+          {/* Coach Quick WOD Override for this day & week */}
+          {(currentUser?.role === 'admin' || currentUser?.role === 'coach') && (
+            <div style={{
+              background: 'var(--bg-secondary)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 14px',
+              border: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              flexWrap: 'wrap'
+            }}>
+              <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--brand-pink)', textTransform: 'uppercase' }}>
+                Coach: Cambiar WOD para {selectedDay.toUpperCase()} ({selectedWeek})
+              </span>
+              <select
+                value={boxWeeklySchedule[selectedWeek]?.[selectedDay] || ''}
+                onChange={(e) => assignBoxWorkoutToDay(selectedDay, e.target.value || null, selectedWeek)}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 'var(--radius-xs)',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  color: '#ffffff',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  outline: 'none',
+                  flex: 1,
+                  minWidth: '220px'
+                }}
+              >
+                <option value="">(WOD por defecto del sistema)</option>
+                {workouts.filter(w => w.zone === 'competitors').map(w => (
+                  <option key={w.id} value={w.id}>
+                    {w.title} ({w.duration})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {competitorDayWorkout ? (
             <RoutineCard 

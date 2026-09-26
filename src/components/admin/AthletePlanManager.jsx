@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
-import { DAYS_OF_WEEK } from '../../data/initialWorkouts';
 import { User, Plus, Calendar, Check, Eye } from 'lucide-react';
+import WeekNavigator from '../shared/WeekNavigator';
+import { getWeekDays, shiftWeekKey } from '../../utils/weekManager';
 
 export default function AthletePlanManager({ onNavigateToRoutine }) {
   const { athletes, addAthlete, loginAsAthlete } = useAuth();
   const { 
     workouts, 
-    athletePlans, 
+    weeklyAthletePlans,
+    selectedWeek,
+    setSelectedWeek,
     assignWorkoutToAthleteDay, 
+    copyAthleteWeekPlan,
     managingAthleteId, 
     setManagingAthleteId,
     setViewMode,
@@ -22,7 +26,9 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
 
   // Currently managed athlete object
   const currentAthlete = athletes.find(a => a.id === managingAthleteId) || athletes[0];
-  const currentPlan = athletePlans[currentAthlete?.id] || {};
+  
+  // Plan de la semana actualmente seleccionada para el alumno
+  const currentPlan = (weeklyAthletePlans[currentAthlete?.id] && weeklyAthletePlans[currentAthlete?.id][selectedWeek]) || {};
 
   const handleAddAthleteSubmit = (e) => {
     e.preventDefault();
@@ -39,6 +45,13 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
     setViewMode('coach_plan');
     setSelectedDay(dayId || 'mon');
   };
+
+  const handleCopyWeek = () => {
+    const nextWeekKey = shiftWeekKey(selectedWeek, 1);
+    copyAthleteWeekPlan(currentAthlete.id, selectedWeek, nextWeekKey);
+  };
+
+  const weekDays = getWeekDays(selectedWeek);
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -156,13 +169,26 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
         )}
       </div>
 
+      {/* Selector de Semana en el Calendario */}
+      <WeekNavigator
+        selectedWeek={selectedWeek}
+        onSelectWeek={setSelectedWeek}
+        showCopyButton={true}
+        onCopyWeekToNext={handleCopyWeek}
+      />
+
       {/* Weekly Plan Matrix for the Selected Athlete */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff', padding: '0 4px' }}>
-          Programación Semanal de {currentAthlete?.name}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+          <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff' }}>
+            Plan de {currentAthlete?.name} para esta semana
+          </span>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+            Semana: {selectedWeek}
+          </span>
+        </div>
 
-        {DAYS_OF_WEEK.map(day => {
+        {weekDays.map(day => {
           const assignedId = currentPlan[day.id];
           const assignedWorkout = workouts.find(w => w.id === assignedId);
 
@@ -180,18 +206,23 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
                 gap: '12px'
               }}
             >
-              {/* Day Label */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '70px' }}>
+              {/* Day Label con Fecha Real */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '110px' }}>
                 <Calendar size={14} color="var(--brand-lilac-light)" />
-                <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#ffffff' }}>
-                  {day.fullLabel}
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#ffffff' }}>
+                    {day.fullLabel}
+                  </span>
+                  <span style={{ fontSize: '10px', color: day.isToday ? 'var(--brand-pink)' : 'var(--text-muted)', fontWeight: day.isToday ? '800' : '500' }}>
+                    {day.dateStr} {day.isToday ? '• Hoy' : ''}
+                  </span>
+                </div>
               </div>
 
               {/* Routine Dropdown for this day */}
               <select
                 value={assignedId || ''}
-                onChange={(e) => assignWorkoutToAthleteDay(currentAthlete.id, day.id, e.target.value || null)}
+                onChange={(e) => assignWorkoutToAthleteDay(currentAthlete.id, day.id, e.target.value || null, selectedWeek)}
                 style={{
                   flex: 1,
                   padding: '8px 10px',
@@ -219,16 +250,19 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
                   onClick={() => onNavigateToRoutine(assignedWorkout)}
                   title="Ver rutina"
                   style={{
-                    padding: '6px 8px',
-                    borderRadius: 'var(--radius-xs)',
-                    background: 'var(--bg-surface)',
-                    color: 'var(--brand-pink)',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
+                    justifyContent: 'center',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: 'var(--radius-xs)',
+                    background: 'rgba(255, 45, 120, 0.1)',
+                    border: '1px solid rgba(255, 45, 120, 0.2)',
+                    color: 'var(--brand-pink)',
+                    cursor: 'pointer'
                   }}
                 >
-                  <Eye size={13} />
+                  <Eye size={14} />
                 </button>
               )}
             </div>
@@ -244,45 +278,46 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.85)',
+          background: 'rgba(0,0,0,0.8)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           padding: '16px',
-          zIndex: 100
+          zIndex: 1000
         }}>
           <div style={{
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border-medium)',
+            background: 'var(--bg-surface-elevated)',
             borderRadius: 'var(--radius-md)',
             padding: '20px',
             width: '100%',
             maxWidth: '360px',
+            border: '1px solid var(--border-subtle)',
             display: 'flex',
             flexDirection: 'column',
             gap: '14px'
           }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#ffffff' }}>
-              Añadir Nuevo Alumno
-            </h3>
+            <span style={{ fontSize: '15px', fontWeight: '800', color: '#ffffff' }}>
+              Registrar Nuevo Alumno
+            </span>
 
             <form onSubmit={handleAddAthleteSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
                 <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                  NOMBRE Y APELLIDOS DEL ALUMNO
+                  Nombre y Apellidos
                 </label>
                 <input
                   type="text"
-                  placeholder="Ej: Sofía Navarro"
+                  placeholder="Ej. Sofía Navarro"
                   value={newAthleteName}
                   onChange={(e) => setNewAthleteName(e.target.value)}
                   required
                   style={{
                     width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--bg-surface)',
+                    padding: '10px',
+                    borderRadius: 'var(--radius-xs)',
+                    background: 'var(--bg-secondary)',
                     border: '1px solid var(--border-subtle)',
+                    color: '#ffffff',
                     fontSize: '13px'
                   }}
                 />
@@ -290,37 +325,60 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
 
               <div>
                 <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                  ENFOQUE / OBJETIVO PRINCIPAL
+                  Enfoque / Objetivo
                 </label>
-                <input
-                  type="text"
-                  placeholder="Ej: Hipertrofia de torso, pérdida grasa, fuerza..."
+                <select
                   value={newAthleteFocus}
                   onChange={(e) => setNewAthleteFocus(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--bg-surface)',
+                    padding: '10px',
+                    borderRadius: 'var(--radius-xs)',
+                    background: 'var(--bg-secondary)',
                     border: '1px solid var(--border-subtle)',
+                    color: '#ffffff',
                     fontSize: '13px'
                   }}
-                />
+                >
+                  <option value="Musculación General">Musculación General</option>
+                  <option value="Hipertrofia Pierna & Glúteo">Hipertrofia Pierna & Glúteo</option>
+                  <option value="Fuerza & Levantamiento">Fuerza & Levantamiento</option>
+                  <option value="Acondicionamiento Físico">Acondicionamiento Físico</option>
+                  <option value="Pérdida de Grasa">Pérdida de Grasa</option>
+                </select>
               </div>
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                 <button
                   type="button"
                   onClick={() => setShowAddAthleteModal(false)}
-                  className="btn-secondary"
-                  style={{ flex: 1, padding: '10px' }}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-secondary)',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary"
-                  style={{ flex: 1, padding: '10px' }}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--brand-gradient)',
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
                 >
                   Guardar Alumno
                 </button>

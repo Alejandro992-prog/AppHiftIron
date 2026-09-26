@@ -23,6 +23,8 @@ export default function TraditionalGymView() {
     setActiveZone, 
     selectedMuscleGroup, 
     setSelectedMuscleGroup,
+    selectedWeek,
+    setSelectedWeek,
     selectedDay, 
     setSelectedDay,
     traditionalWorkouts,
@@ -339,9 +341,12 @@ export default function TraditionalGymView() {
           <BaseCalendar 
             selectedDay={selectedDay}
             onSelectDay={setSelectedDay}
+            selectedWeek={selectedWeek}
+            onSelectWeek={setSelectedWeek}
             zone="traditional"
             workoutMap={workoutMapForCalendar}
             title="Días de tu Plan Asignado"
+            showWeekNavigator={true}
           />
 
           {selectedDayWorkout ? (

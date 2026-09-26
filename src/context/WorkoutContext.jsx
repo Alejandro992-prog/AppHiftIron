@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { INITIAL_WORKOUTS, INITIAL_PRS } from '../data/initialWorkouts';
 import { useAuth } from './AuthContext';
 import confetti from 'canvas-confetti';
+import { getWeekKey, shiftWeekKey } from '../utils/weekManager';
 
 const WorkoutContext = createContext();
 
@@ -47,6 +48,9 @@ export function WorkoutProvider({ children }) {
   // Selected muscle group filter for traditional gym
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState('all');
 
+  // Selected week key: e.g. "2026-09-28" (Monday date of the selected week)
+  const [selectedWeek, setSelectedWeek] = useState(() => getWeekKey(new Date()));
+
   // Selected day for weekly plan
   const [selectedDay, setSelectedDay] = useState(() => {
     const dayIndex = new Date().getDay();
@@ -54,15 +58,54 @@ export function WorkoutProvider({ children }) {
     return map[dayIndex] || 'mon';
   });
 
-  // Individual athlete weekly assignments: { [athleteId]: { [dayId]: workoutId } }
-  const [athletePlans, setAthletePlans] = useState(() => {
+  // Multi-week assignments for individual athletes: { [athleteId]: { [weekKey]: { [dayId]: workoutId } } }
+  const [weeklyAthletePlans, setWeeklyAthletePlans] = useState(() => {
     try {
-      const saved = localStorage.getItem('hift_athlete_plans_v2');
-      return saved ? JSON.parse(saved) : INITIAL_ATHLETE_PLANS;
+      const saved = localStorage.getItem('hift_weekly_athlete_plans_v1');
+      if (saved) return JSON.parse(saved);
+
+      // Migrar o inicializar con INITIAL_ATHLETE_PLANS para la semana actual
+      const currentWk = getWeekKey(new Date());
+      const oldPlans = localStorage.getItem('hift_athlete_plans_v2');
+      const base = oldPlans ? JSON.parse(oldPlans) : INITIAL_ATHLETE_PLANS;
+      const initial = {};
+      Object.keys(base).forEach(athleteId => {
+        initial[athleteId] = {
+          [currentWk]: { ...base[athleteId] }
+        };
+      });
+      return initial;
     } catch {
-      return INITIAL_ATHLETE_PLANS;
+      return {};
     }
   });
+
+  // Multi-week assignments for general Box Competitors programming: { [weekKey]: { [dayId]: workoutId } }
+  const [boxWeeklySchedule, setBoxWeeklySchedule] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hift_box_weekly_schedule_v1');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Guardar en localStorage al cambiar
+  useEffect(() => {
+    try {
+      localStorage.setItem('hift_weekly_athlete_plans_v1', JSON.stringify(weeklyAthletePlans));
+    } catch {
+      // Ignorar si cuota excedida
+    }
+  }, [weeklyAthletePlans]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('hift_box_weekly_schedule_v1', JSON.stringify(boxWeeklySchedule));
+    } catch {
+      // Ignorar si cuota excedida
+    }
+  }, [boxWeeklySchedule]);
 
   // Selected athlete in Admin Plan Manager (default: 'user-athlete-1')
   const [managingAthleteId, setManagingAthleteId] = useState('user-athlete-1');
@@ -401,15 +444,72 @@ export function WorkoutProvider({ children }) {
     }
   };
 
-  // Assign workout to an athlete for a specific day
-  const assignWorkoutToAthleteDay = (athleteId, dayId, workoutId) => {
-    setAthletePlans(prev => ({
-      ...prev,
-      [athleteId]: {
-        ...(prev[athleteId] || {}),
-        [dayId]: workoutId
-      }
-    }));
+  // Asignar rutina a un alumno para un día y semana específicos
+  const assignWorkoutToAthleteDay = (athleteId, dayId, workoutId, weekKey = selectedWeek) => {
+    setWeeklyAthletePlans(prev => {
+      const athleteWeeks = prev[athleteId] || {};
+      const targetWeek = athleteWeeks[weekKey] || {};
+      return {
+        ...prev,
+        [athleteId]: {
+          ...athleteWeeks,
+          [weekKey]: {
+            ...targetWeek,
+            [dayId]: workoutId
+          }
+        }
+      };
+    });
+  };
+
+  // Copiar la programación de una semana entera de un alumno a otra semana
+  const copyAthleteWeekPlan = (athleteId, fromWeekKey, toWeekKey) => {
+    setWeeklyAthletePlans(prev => {
+      const athleteWeeks = prev[athleteId] || {};
+      const sourcePlan = athleteWeeks[fromWeekKey] || INITIAL_ATHLETE_PLANS[athleteId] || {};
+      return {
+        ...prev,
+        [athleteId]: {
+          ...athleteWeeks,
+          [toWeekKey]: { ...sourcePlan }
+        }
+      };
+    });
+    celebrateCompletion();
+  };
+
+  // Asignar rutina a la programación general del Box (Competidores) para un día y semana específicos
+  const assignBoxWorkoutToDay = (dayId, workoutId, weekKey = selectedWeek) => {
+    setBoxWeeklySchedule(prev => {
+      const targetWeek = prev[weekKey] || {};
+      return {
+        ...prev,
+        [weekKey]: {
+          ...targetWeek,
+          [dayId]: workoutId
+        }
+      };
+    });
+  };
+
+  // Copiar la programación de competidores de una semana a otra
+  const copyBoxWeekPlan = (fromWeekKey, toWeekKey) => {
+    setBoxWeeklySchedule(prev => {
+      const sourceWeek = prev[fromWeekKey] || {};
+      const populated = { ...sourceWeek };
+      // Si la semana origen usaba rutinas por defecto, extraer sus IDs
+      ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].forEach(d => {
+        if (!populated[d]) {
+          const def = competitorWorkouts.find(w => w.dayId === d);
+          if (def) populated[d] = def.id;
+        }
+      });
+      return {
+        ...prev,
+        [toWeekKey]: { ...populated }
+      };
+    });
+    celebrateCompletion();
   };
 
   // Add PR
@@ -459,12 +559,15 @@ export function WorkoutProvider({ children }) {
   // Reset to default workouts and plans
   const resetToDefaults = () => {
     setWorkouts(INITIAL_WORKOUTS);
-    setAthletePlans(INITIAL_ATHLETE_PLANS);
+    setWeeklyAthletePlans({});
+    setBoxWeeklySchedule({});
     setPrs(INITIAL_PRS);
     setPerformanceLogs([]);
     setCompletedExercises({});
     localStorage.removeItem('hift_workouts_v3');
     localStorage.removeItem('hift_athlete_plans_v2');
+    localStorage.removeItem('hift_weekly_athlete_plans_v1');
+    localStorage.removeItem('hift_box_weekly_schedule_v1');
     localStorage.removeItem('hift_prs_v3');
     localStorage.removeItem('hift_performance_logs_v1');
     localStorage.removeItem('hift_completed_exercises');
@@ -475,7 +578,11 @@ export function WorkoutProvider({ children }) {
     ? currentUser.id 
     : managingAthleteId;
 
-  const currentAthletePlan = athletePlans[activeAthleteId] || {};
+  // Plan del atleta activo para la semana seleccionada
+  const currentAthletePlan = (weeklyAthletePlans[activeAthleteId] && weeklyAthletePlans[activeAthleteId][selectedWeek]) 
+    || INITIAL_ATHLETE_PLANS[activeAthleteId] 
+    || {};
+
   const assignedWorkoutIdForSelectedDay = currentAthletePlan[selectedDay];
 
   // Workouts for Traditional Gym
@@ -495,8 +602,11 @@ export function WorkoutProvider({ children }) {
   // Workouts for Competitors zone
   const competitorWorkouts = workouts.filter(w => w.zone === 'competitors');
 
-  // Competitor workout for the currently selected day
-  const competitorDayWorkout = competitorWorkouts.find(w => w.dayId === selectedDay) || null;
+  // Competitor workout for the currently selected week and day
+  const scheduledCompetitorWorkoutId = boxWeeklySchedule[selectedWeek]?.[selectedDay];
+  const competitorDayWorkout = scheduledCompetitorWorkoutId 
+    ? (workouts.find(w => w.id === scheduledCompetitorWorkoutId) || null)
+    : (competitorWorkouts.find(w => w.dayId === selectedDay) || null);
 
   return (
     <WorkoutContext.Provider value={{
@@ -506,10 +616,17 @@ export function WorkoutProvider({ children }) {
       setViewMode,
       selectedMuscleGroup,
       setSelectedMuscleGroup,
+      selectedWeek,
+      setSelectedWeek,
       selectedDay,
       setSelectedDay,
-      athletePlans,
+      athletePlans: currentAthletePlan,
+      weeklyAthletePlans,
+      boxWeeklySchedule,
       assignWorkoutToAthleteDay,
+      copyAthleteWeekPlan,
+      assignBoxWorkoutToDay,
+      copyBoxWeekPlan,
       managingAthleteId,
       setManagingAthleteId,
       activeAthleteId,
