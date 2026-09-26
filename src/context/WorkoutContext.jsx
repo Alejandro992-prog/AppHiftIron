@@ -364,14 +364,6 @@ export function WorkoutProvider({ children }) {
     setActiveWorkoutDetail(null);
   }, [currentUser?.id]);
 
-  // Persist athlete plans
-  useEffect(() => {
-    try {
-      localStorage.setItem('hift_athlete_plans_v2', JSON.stringify(athletePlans));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [athletePlans]);
 
   // Persist workouts
   useEffect(() => {
