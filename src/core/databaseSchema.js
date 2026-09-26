@@ -167,7 +167,30 @@ CREATE TABLE athlete_prs (
 );
 
 -- ============================================================================
--- 6. POLÍTICAS ROW LEVEL SECURITY (RLS)
+-- 6. REGISTROS DE BIENESTAR DIARIO (READINESS / RPE CHECK-IN)
+-- ============================================================================
+
+CREATE TABLE athlete_readiness_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+    checkin_date DATE DEFAULT CURRENT_DATE NOT NULL,
+    sleep_hours VARCHAR(10) DEFAULT '7-8h' NOT NULL, -- '<5h', '5-6h', '6-7h', '7-8h', '>8h'
+    sleep_quality INTEGER CHECK (sleep_quality BETWEEN 1 AND 5) NOT NULL, -- 1=Muy malo, 5=Óptimo
+    soreness_level INTEGER CHECK (soreness_level BETWEEN 1 AND 5) NOT NULL, -- 1=Agujetas severas, 5=Sin dolor
+    soreness_areas TEXT[] DEFAULT ARRAY['Ninguna molestia']::TEXT[] NOT NULL, -- Zonas con molestia ('Piernas', 'Lumbar', etc.)
+    energy_stress INTEGER CHECK (energy_stress BETWEEN 1 AND 5) NOT NULL, -- 1=Agotado, 5=A tope
+    readiness_score INTEGER CHECK (readiness_score BETWEEN 0 AND 100) NOT NULL,
+    fatigue_level VARCHAR(20) DEFAULT 'optimal' NOT NULL, -- 'optimal', 'moderate', 'high_fatigue'
+    high_fatigue_alert BOOLEAN DEFAULT FALSE NOT NULL,
+    suggested_deload BOOLEAN DEFAULT FALSE NOT NULL,
+    is_private_to_coach BOOLEAN DEFAULT TRUE NOT NULL, -- Privacidad estricta: visible solo para el Head Coach
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    CONSTRAINT unique_user_daily_readiness UNIQUE (user_id, checkin_date)
+);
+
+-- ============================================================================
+-- 7. POLÍTICAS ROW LEVEL SECURITY (RLS)
 -- ============================================================================
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -175,6 +198,7 @@ ALTER TABLE workout_programs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE athlete_assigned_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workout_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE athlete_prs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE athlete_readiness_logs ENABLE ROW LEVEL SECURITY;
 
 -- Regla 1: Un atleta puede ver su propio usuario, un coach/admin ve a todos
 CREATE POLICY users_policy ON users
@@ -202,6 +226,13 @@ CREATE POLICY programs_access_policy ON workout_programs
 
 -- Regla 3: Un atleta solo puede crear y ver sus propios logs de entrenamiento
 CREATE POLICY logs_owner_policy ON workout_logs
+    FOR ALL
+    USING (auth.uid() = user_id OR EXISTS (
+        SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'head_coach')
+    ));
+
+-- Regla 4: Logs de Bienestar (Readiness) - Atleta gestiona el suyo, el Coach tiene visibilidad total
+CREATE POLICY readiness_policy ON athlete_readiness_logs
     FOR ALL
     USING (auth.uid() = user_id OR EXISTS (
         SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'head_coach')

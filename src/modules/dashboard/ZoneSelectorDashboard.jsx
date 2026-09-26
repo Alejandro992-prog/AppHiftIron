@@ -6,23 +6,32 @@ import {
   Lock, 
   CheckCircle, 
   Zap,
-  Sparkles
+  Sparkles,
+  Percent,
+  Camera,
+  Activity
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
+import ReadinessBanner from '../../components/readiness/ReadinessBanner';
 
 export default function ZoneSelectorDashboard() {
   const { currentUser, canAccessZone, isAdmin } = useAuth();
-  const { setActiveZone } = useWorkouts();
+  const { 
+    setActiveZone, 
+    openPercentageCalc, 
+    openStoryModal, 
+    openReadinessModal 
+  } = useWorkouts();
 
   const hasCompetitorsAccess = canAccessZone('competitors');
 
   return (
-    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '6px 0' }}>
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '6px 0' }}>
       {/* Friendly Greeting Header */}
       <div style={{
         textAlign: 'center',
-        padding: '10px 0 6px 0'
+        padding: '6px 0 2px 0'
       }}>
         <div style={{
           display: 'inline-flex',
@@ -31,7 +40,7 @@ export default function ZoneSelectorDashboard() {
           background: 'rgba(255, 255, 255, 0.05)',
           padding: '4px 12px',
           borderRadius: 'var(--radius-full)',
-          marginBottom: '8px',
+          marginBottom: '6px',
           border: '1px solid var(--border-subtle)'
         }}>
           <Sparkles size={13} color="var(--brand-pink)" />
@@ -43,9 +52,85 @@ export default function ZoneSelectorDashboard() {
         <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#ffffff', letterSpacing: '-0.02em', margin: 0 }}>
           ¿Qué vas a entrenar hoy?
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
+        <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
           Elige tu modalidad para acceder a tu sesión, calendario y rutinas:
         </p>
+      </div>
+
+      {/* Daily Readiness Check-in Banner */}
+      <ReadinessBanner onOpenCheckin={openReadinessModal} />
+
+      {/* Quick Athlete Tools: % Calculator, Story Generator */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '8px'
+      }}>
+        <button
+          onClick={() => openPercentageCalc()}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
+            color: '#ffffff',
+            fontSize: '11.5px',
+            fontWeight: '800',
+            cursor: 'pointer',
+            boxShadow: 'var(--shadow-sm)'
+          }}
+        >
+          <div style={{
+            width: '24px',
+            height: '24px',
+            borderRadius: '6px',
+            background: 'rgba(255, 45, 120, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--brand-pink)'
+          }}>
+            <Percent size={13} />
+          </div>
+          <span>Calculadora % & Barra</span>
+        </button>
+
+        <button
+          onClick={() => openStoryModal({ title: 'Entrenamiento Diario', type: 'HIFT IRON BOX' })}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
+            color: '#ffffff',
+            fontSize: '11.5px',
+            fontWeight: '800',
+            cursor: 'pointer',
+            boxShadow: 'var(--shadow-sm)'
+          }}
+        >
+          <div style={{
+            width: '24px',
+            height: '24px',
+            borderRadius: '6px',
+            background: 'rgba(168, 85, 247, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--brand-lilac-light)'
+          }}>
+            <Camera size={13} />
+          </div>
+          <span>Crear Story Instagram</span>
+        </button>
       </div>
 
       {/* 2 Main Big Buttons / Selection Cards */}

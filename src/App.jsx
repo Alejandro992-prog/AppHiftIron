@@ -11,6 +11,9 @@ import ZoneSelectorDashboard from './modules/dashboard/ZoneSelectorDashboard';
 import CompetitorsView from './modules/competitors/CompetitorsView';
 import TraditionalGymView from './modules/traditional/TraditionalGymView';
 import CompleteProfileModal from './components/athlete/CompleteProfileModal';
+import PercentageCalculatorModal from './components/calculator/PercentageCalculatorModal';
+import InstagramStoryModal from './components/social/InstagramStoryModal';
+import ReadinessCheckinModal from './components/readiness/ReadinessCheckinModal';
 import { Sparkles } from 'lucide-react';
 
 function MainApp() {
@@ -19,7 +22,15 @@ function MainApp() {
     activeZone,
     setActiveZone,
     activeWorkoutDetail, 
-    setActiveWorkoutDetail 
+    setActiveWorkoutDetail,
+    isPercentageCalcOpen,
+    percentageCalcPreset,
+    closePercentageCalc,
+    isStoryModalOpen,
+    storyWorkoutData,
+    closeStoryModal,
+    isReadinessModalOpen,
+    closeReadinessModal
   } = useWorkouts();
 
   // Active tab: 'admin' (default for coach) | 'hub' (default for athlete) | 'workouts' | 'timer'
@@ -162,6 +173,26 @@ function MainApp() {
         <CompleteProfileModal
           isOpen={isProfileModalOpen}
           onClose={() => setIsProfileModalOpen(false)}
+        />
+
+        {/* 1RM & Barbell Percentage Calculator Modal */}
+        <PercentageCalculatorModal
+          isOpen={isPercentageCalcOpen}
+          onClose={closePercentageCalc}
+          initialData={percentageCalcPreset}
+        />
+
+        {/* Instagram Stories Generator Modal */}
+        <InstagramStoryModal
+          isOpen={isStoryModalOpen}
+          onClose={closeStoryModal}
+          workoutData={storyWorkoutData}
+        />
+
+        {/* Daily Readiness & RPE Check-in Modal */}
+        <ReadinessCheckinModal
+          isOpen={isReadinessModalOpen}
+          onClose={closeReadinessModal}
         />
       </div>
     </div>

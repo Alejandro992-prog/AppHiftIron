@@ -1,5 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Play, Pause, RotateCcw, ChevronRight, Check, Award, Timer as TimerIcon, Volume2, VolumeX, Sparkles, Layers } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  Play, 
+  Pause, 
+  RotateCcw, 
+  ChevronRight, 
+  Check, 
+  Award, 
+  Timer as TimerIcon, 
+  Volume2, 
+  VolumeX, 
+  Sparkles, 
+  Layers, 
+  Percent, 
+  Camera, 
+  Share2, 
+  Flame,
+  Dumbbell
+} from 'lucide-react';
 import { useWorkouts } from '../../context/WorkoutContext';
 
 // Offline beep generator for group timer
@@ -22,10 +40,19 @@ function playGroupBeep(freq = 880, duration = 0.15) {
 }
 
 export default function RoutineDetail({ workout, onBack, onOpenTimerWithPreset }) {
-  const { completedExercises, toggleExercise, celebrateCompletion } = useWorkouts();
+  const { 
+    completedExercises, 
+    toggleExercise, 
+    celebrateCompletion,
+    prs,
+    openPercentageCalc,
+    openStoryModal,
+    isDeloadMode
+  } = useWorkouts();
 
   // Active section/group index (stepper)
   const [activeGroupIndex, setActiveGroupIndex] = useState(0);
+  const [hasCompletedWorkout, setHasCompletedWorkout] = useState(false);
 
   // Group Timer State
   const sections = workout?.sections || [];
@@ -78,12 +105,47 @@ export default function RoutineDetail({ workout, onBack, onOpenTimerWithPreset }
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Look up relevant PR for exercise
+  const getExercisePR = (name = '') => {
+    const clean = name.toLowerCase();
+    const match = prs.find(p => 
+      clean.includes(p.exercise.toLowerCase()) || 
+      p.exercise.toLowerCase().includes(clean)
+    );
+    if (match) {
+      const val = parseFloat(match.weight);
+      return !isNaN(val) ? { weight: val, name: match.exercise } : null;
+    }
+    if (clean.includes('snatch')) return { weight: 82.5, name: 'Snatch' };
+    if (clean.includes('clean') || clean.includes('jerk')) return { weight: 95, name: 'Clean & Jerk' };
+    if (clean.includes('squat') || clean.includes('sentadilla')) return { weight: 140, name: 'Back Squat' };
+    if (clean.includes('deadlift') || clean.includes('muerto')) return { weight: 175, name: 'Deadlift' };
+    if (clean.includes('banca') || clean.includes('bench')) return { weight: 105, name: 'Bench Press' };
+    return null;
+  };
+
+  // Extract percentage values like 75%, 80%, etc.
+  const extractPercentages = (text = '') => {
+    if (!text) return [];
+    const matches = [...text.matchAll(/(\d{2}(?:\.\d)?)\s*%/g)];
+    const unique = [...new Set(matches.map(m => parseFloat(m[1])))];
+    return unique.slice(0, 3); // Top 3 percentages
+  };
+
   const handleNextGroup = () => {
     if (activeGroupIndex < sections.length - 1) {
       setActiveGroupIndex(prev => prev + 1);
       window.scrollTo({ top: 180, behavior: 'smooth' });
     } else {
+      setHasCompletedWorkout(true);
       celebrateCompletion();
+      openStoryModal({
+        title: workout.title,
+        type: workout.type,
+        duration: workout.duration,
+        zone: workout.zone,
+        score: '100% Completado'
+      });
     }
   };
 
@@ -116,7 +178,7 @@ export default function RoutineDetail({ workout, onBack, onOpenTimerWithPreset }
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* Top Header Bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
         <button
           onClick={onBack}
           style={{
@@ -124,22 +186,117 @@ export default function RoutineDetail({ workout, onBack, onOpenTimerWithPreset }
             alignItems: 'center',
             gap: '6px',
             color: 'var(--text-secondary)',
-            fontSize: '13px',
+            fontSize: '12.5px',
             fontWeight: '700',
-            padding: '6px 12px',
+            padding: '6px 10px',
             borderRadius: 'var(--radius-sm)',
             background: 'var(--bg-secondary)',
-            border: '1px solid var(--border-subtle)'
+            border: '1px solid var(--border-subtle)',
+            cursor: 'pointer'
           }}
         >
-          <ArrowLeft size={16} />
-          <span>Volver al Catálogo</span>
+          <ArrowLeft size={15} />
+          <span>Volver</span>
         </button>
 
-        <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--brand-lilac-light)' }}>
-          {workout.duration}
-        </span>
+        {/* Quick Tools: Percentage Calculator & Story Share */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            onClick={() => openPercentageCalc({ exercise: workout.title })}
+            title="Calculadora de % 1RM y discos de barra"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '6px 10px',
+              borderRadius: 'var(--radius-full)',
+              background: 'rgba(255, 45, 120, 0.12)',
+              border: '1px solid rgba(255, 45, 120, 0.3)',
+              color: 'var(--brand-pink)',
+              fontSize: '11px',
+              fontWeight: '800',
+              cursor: 'pointer'
+            }}
+          >
+            <Percent size={13} />
+            <span>% 1RM & Discos</span>
+          </button>
+
+          <button
+            onClick={() => openStoryModal({
+              title: workout.title,
+              type: workout.type,
+              duration: workout.duration,
+              zone: workout.zone
+            })}
+            title="Generar Story para Instagram"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '6px 10px',
+              borderRadius: 'var(--radius-full)',
+              background: 'linear-gradient(135deg, rgba(255, 45, 120, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)',
+              border: '1px solid rgba(168, 85, 247, 0.4)',
+              color: '#ffffff',
+              fontSize: '11px',
+              fontWeight: '800',
+              cursor: 'pointer'
+            }}
+          >
+            <Camera size={13} color="var(--brand-pink)" />
+            <span>Story</span>
+          </button>
+        </div>
       </div>
+
+      {/* Celebration Banner if finished */}
+      {hasCompletedWorkout && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(255, 45, 120, 0.2) 0%, rgba(168, 85, 247, 0.25) 100%)',
+          border: '1.5px solid var(--brand-pink)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '16px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          textAlign: 'center',
+          gap: '10px',
+          boxShadow: '0 8px 30px rgba(255, 45, 120, 0.2)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--brand-pink)' }}>
+            <Award size={20} />
+            <span style={{ fontSize: '13px', fontWeight: '900', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              ¡ENTRENAMIENTO COMPLETADO CON ÉXITO! 🎉
+            </span>
+          </div>
+          <p style={{ fontSize: '12px', color: '#e2e8f0', margin: 0 }}>
+            Has finalizado todos los bloques de <strong>{workout.title}</strong>. ¡Comparte tu logro en redes con el diseño oficial de HIFT Iron Box!
+          </p>
+          <button
+            onClick={() => openStoryModal({
+              title: workout.title,
+              type: workout.type,
+              duration: workout.duration,
+              zone: workout.zone,
+              score: 'WOD COMPLETADO'
+            })}
+            className="btn-primary"
+            style={{
+              padding: '10px 18px',
+              fontSize: '12.5px',
+              fontWeight: '900',
+              borderRadius: 'var(--radius-full)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <Camera size={15} />
+            <span>📸 Compartir en Instagram Stories</span>
+          </button>
+        </div>
+      )}
 
       {/* Routine Title Card */}
       <div style={{
@@ -410,6 +567,83 @@ export default function RoutineDetail({ workout, onBack, onOpenTimerWithPreset }
                       💡 {exercise.notes}
                     </p>
                   )}
+
+                  {/* Automatic 1RM & Percentage Detector */}
+                  {(() => {
+                    const fullText = `${exercise.name} ${exercise.notes || ''} ${exercise.prescribed_load || ''} ${exercise.rx || ''}`;
+                    const pcts = extractPercentages(fullText);
+                    if (pcts.length === 0) return null;
+
+                    const relevantPr = getExercisePR(exercise.name);
+                    const base1RM = relevantPr ? relevantPr.weight : 80;
+
+                    return (
+                      <div 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openPercentageCalc({
+                            exercise: relevantPr?.name || exercise.name,
+                            percentage: pcts[0],
+                            oneRepMax: base1RM
+                          });
+                        }}
+                        style={{
+                          marginTop: '6px',
+                          padding: '8px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'linear-gradient(135deg, rgba(255, 45, 120, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%)',
+                          border: '1px solid rgba(255, 45, 120, 0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <Percent size={12} color="var(--brand-pink)" />
+                            <span style={{ fontSize: '10.5px', fontWeight: '900', color: 'var(--brand-pink)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                              Cálculo de Cargas (% de {base1RM}kg {relevantPr ? relevantPr.name : ''})
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            {pcts.map((pct) => {
+                              const raw = (base1RM * (pct / 100)) * (isDeloadMode ? 0.85 : 1.0);
+                              const rounded = Math.round(raw / 2.5) * 2.5;
+                              return (
+                                <span key={pct} style={{ fontSize: '11.5px', fontWeight: '800', color: '#ffffff' }}>
+                                  <strong style={{ color: 'var(--brand-lilac-light)' }}>{pct}%:</strong> {rounded} kg
+                                </span>
+                              );
+                            })}
+                            {isDeloadMode && (
+                              <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: '800' }}>
+                                (-15% Descarga)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '10.5px',
+                          fontWeight: '800',
+                          color: '#ffffff',
+                          background: 'var(--brand-gradient)',
+                          padding: '4px 8px',
+                          borderRadius: 'var(--radius-xs)',
+                          flexShrink: 0
+                        }}>
+                          <Dumbbell size={11} />
+                          <span>Ver Discos</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             );

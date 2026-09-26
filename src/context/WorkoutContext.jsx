@@ -154,6 +154,153 @@ export function WorkoutProvider({ children }) {
   // Currently opened workout detail
   const [activeWorkoutDetail, setActiveWorkoutDetail] = useState(null);
 
+  // Readiness / RPE Daily check-in logs
+  const getTodayKey = () => new Date().toISOString().split('T')[0];
+
+  const [readinessLogs, setReadinessLogs] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hift_readiness_logs_v1');
+      if (saved) return JSON.parse(saved);
+      const today = getTodayKey();
+      return {
+        [`${today}_user-athlete-1`]: {
+          userId: 'user-athlete-1',
+          date: today,
+          sleep: 5,
+          sleepHours: '8h',
+          sleepQualityText: 'Profundo / Recuperación total',
+          soreness: 4,
+          sorenessAreas: ['Ninguna'],
+          energy: 5,
+          energyText: 'A tope / Máxima motivación',
+          score: 92,
+          level: 'optimal',
+          deloadMode: false,
+          notes: 'Descanso de 8 horas, sin molestias articulares.',
+          isPrivate: true,
+          loggedAt: '08:15'
+        },
+        [`${today}_user-athlete-2`]: {
+          userId: 'user-athlete-2',
+          date: today,
+          sleep: 2,
+          sleepHours: '5h',
+          sleepQualityText: 'Inquieto con despertares',
+          soreness: 1,
+          sorenessAreas: ['Espalda baja / Lumbar', 'Piernas / Rodillas'],
+          energy: 2,
+          energyText: 'Poca energía / Pesadez',
+          score: 42,
+          level: 'fatigue',
+          deloadMode: true,
+          notes: 'Insomnio por turno laboral y dolor lumbar fuerte tras día de sentadillas.',
+          isPrivate: true,
+          loggedAt: '07:45'
+        },
+        [`${today}_user-athlete-3`]: {
+          userId: 'user-athlete-3',
+          date: today,
+          sleep: 4,
+          sleepHours: '7h',
+          sleepQualityText: 'Bueno / Reparador',
+          soreness: 3,
+          sorenessAreas: ['Hombros / Trapecios'],
+          energy: 3,
+          energyText: 'Energía neutra / Normal',
+          score: 75,
+          level: 'moderate',
+          deloadMode: false,
+          notes: 'Energía media, buen calentamiento requerido.',
+          isPrivate: true,
+          loggedAt: '09:00'
+        }
+      };
+    } catch {
+      return {};
+    }
+  });
+
+  // Deload mode flag for active user
+  const [isDeloadMode, setIsDeloadMode] = useState(false);
+
+  // Global Modals State
+  const [isPercentageCalcOpen, setIsPercentageCalcOpen] = useState(false);
+  const [percentageCalcPreset, setPercentageCalcPreset] = useState({});
+
+  const [isStoryModalOpen, setIsStoryModalOpen] = useState(false);
+  const [storyWorkoutData, setStoryWorkoutData] = useState({});
+
+  const [isReadinessModalOpen, setIsReadinessModalOpen] = useState(false);
+
+  const openPercentageCalc = (preset = {}) => {
+    setPercentageCalcPreset(preset);
+    setIsPercentageCalcOpen(true);
+  };
+
+  const closePercentageCalc = () => {
+    setIsPercentageCalcOpen(false);
+  };
+
+  const openStoryModal = (workoutData = {}) => {
+    setStoryWorkoutData(workoutData);
+    setIsStoryModalOpen(true);
+  };
+
+  const closeStoryModal = () => {
+    setIsStoryModalOpen(false);
+  };
+
+  const openReadinessModal = () => {
+    setIsReadinessModalOpen(true);
+  };
+
+  const closeReadinessModal = () => {
+    setIsReadinessModalOpen(false);
+  };
+
+  const saveDailyReadiness = (userId, data) => {
+    const today = getTodayKey();
+    const key = `${today}_${userId}`;
+    const entry = {
+      userId,
+      date: today,
+      ...data,
+      loggedAt: new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(new Date())
+    };
+
+    setReadinessLogs(prev => {
+      const updated = { ...prev, [key]: entry };
+      try {
+        localStorage.setItem('hift_readiness_logs_v1', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+      return updated;
+    });
+
+    if (data.deloadMode !== undefined) {
+      setIsDeloadMode(data.deloadMode);
+    }
+  };
+
+  const getTodayReadiness = (userId) => {
+    if (!userId) return null;
+    const today = getTodayKey();
+    return readinessLogs[`${today}_${userId}`] || null;
+  };
+
+  const toggleDeloadMode = (userId) => {
+    const today = getTodayKey();
+    const key = `${today}_${userId}`;
+    const current = readinessLogs[key];
+    const newDeload = !isDeloadMode;
+    setIsDeloadMode(newDeload);
+
+    if (current) {
+      saveDailyReadiness(userId, { ...current, deloadMode: newDeload });
+    }
+  };
+
   // Custom logo URL
   const [customLogoUrl, setCustomLogoUrl] = useState(() => {
     try {
@@ -387,7 +534,25 @@ export function WorkoutProvider({ children }) {
       setActiveWorkoutDetail,
       customLogoUrl,
       updateCustomLogo,
-      resetToDefaults
+      resetToDefaults,
+      // Readiness / RPE Daily check-in
+      readinessLogs,
+      saveDailyReadiness,
+      getTodayReadiness,
+      isDeloadMode,
+      toggleDeloadMode,
+      // Global Modals
+      isPercentageCalcOpen,
+      percentageCalcPreset,
+      openPercentageCalc,
+      closePercentageCalc,
+      isStoryModalOpen,
+      storyWorkoutData,
+      openStoryModal,
+      closeStoryModal,
+      isReadinessModalOpen,
+      openReadinessModal,
+      closeReadinessModal
     }}>
       {children}
     </WorkoutContext.Provider>
