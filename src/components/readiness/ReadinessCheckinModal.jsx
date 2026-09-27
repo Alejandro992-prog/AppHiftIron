@@ -10,14 +10,21 @@ import {
   Lock, 
   ShieldAlert, 
   MessageSquare,
-  Clock
+  Clock,
+  Info,
+  FileText
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
 
 export default function ReadinessCheckinModal({ isOpen, onClose }) {
-  const { currentUser } = useAuth();
+  const { currentUser, getUserConsents, updateConsent } = useAuth();
   const { saveDailyReadiness, getTodayReadiness, isDeloadMode } = useWorkouts();
+
+  // Consents from auth
+  const userConsents = getUserConsents(currentUser?.id);
+  const [healthConsentGiven, setHealthConsentGiven] = useState(!!userConsents.health_readiness);
+  const [showLegalDetails, setShowLegalDetails] = useState(false);
 
   // Current values or defaults
   const todayEntry = getTodayReadiness(currentUser?.id);
@@ -29,6 +36,13 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
   const [energyScore, setEnergyScore] = useState(todayEntry?.energy || 4);
   const [notes, setNotes] = useState(todayEntry?.notes || '');
   const [activeDeload, setActiveDeload] = useState(isDeloadMode);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      const current = getUserConsents(currentUser.id);
+      setHealthConsentGiven(!!current.health_readiness);
+    }
+  }, [currentUser?.id, isOpen]);
 
   useEffect(() => {
     if (todayEntry) {
@@ -130,6 +144,14 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
   };
 
   const handleSave = () => {
+    if (!healthConsentGiven) {
+      alert('Para registrar datos de bienestar, fatiga o salud física, la Ley de Protección de Datos (RGPD Art. 9) exige tu consentimiento explícito previo.');
+      return;
+    }
+
+    // Persistir el consentimiento explícito de salud en la auditoría RGPD
+    updateConsent('health_readiness', true, currentUser?.id);
+
     saveDailyReadiness(currentUser?.id, {
       sleep: sleepScore,
       sleepHours,
@@ -142,7 +164,9 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
       level: statusInfo.level,
       deloadMode: activeDeload,
       notes: notes.trim(),
-      isPrivate: true
+      isPrivate: true,
+      gdprHealthConsentGranted: true,
+      gdprConsentTimestamp: new Date().toISOString()
     });
     onClose();
   };
@@ -631,10 +655,106 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
           </div>
         )}
 
+        {/* RGPD / LOPDGDD: Consentimiento Explícito de Datos de Salud (Art. 9.2.a) */}
+        <div style={{
+          background: healthConsentGiven ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255, 45, 120, 0.09)',
+          border: healthConsentGiven ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255, 45, 120, 0.35)',
+          borderRadius: 'var(--radius-sm)',
+          padding: '10px 12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px'
+        }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '9px',
+            cursor: 'pointer',
+            userSelect: 'none'
+          }}>
+            <input
+              type="checkbox"
+              checked={healthConsentGiven}
+              onChange={(e) => {
+                const val = e.target.checked;
+                setHealthConsentGiven(val);
+                updateConsent('health_readiness', val, currentUser?.id);
+              }}
+              style={{
+                marginTop: '2px',
+                width: '16px',
+                height: '16px',
+                accentColor: 'var(--brand-pink)',
+                cursor: 'pointer',
+                flexShrink: 0
+              }}
+            />
+            <span style={{ fontSize: '11px', color: '#e2e8f0', lineHeight: '1.4' }}>
+              <strong>Consentimiento explícito (RGPD Art. 9):</strong> Autorizo de forma expresa el tratamiento de mis datos de descanso, fatiga física y posibles molestias musculares para que mi Head Coach personalice mis cargas deportivas y prevenga sobrecargas.
+            </span>
+          </label>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '2px' }}>
+            <button
+              type="button"
+              onClick={() => setShowLegalDetails(!showLegalDetails)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--brand-lilac-light)',
+                fontSize: '10.5px',
+                fontWeight: '700',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+                padding: '0'
+              }}
+            >
+              <Info size={12} />
+              <span>{showLegalDetails ? 'Ocultar información legal' : 'Ver Cláusula Informativa AEPD (1ª Capa)'}</span>
+            </button>
+
+            <span style={{
+              fontSize: '9.5px',
+              fontWeight: '800',
+              color: healthConsentGiven ? '#22c55e' : '#f43f5e',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px'
+            }}>
+              <ShieldCheck size={11} /> {healthConsentGiven ? 'Consentimiento Otorgado' : 'Consentimiento Requerido'}
+            </span>
+          </div>
+
+          {/* Primera Capa Informativa (Directriz AEPD / Art. 11 LOPDGDD) */}
+          {showLegalDetails && (
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.45)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: 'var(--radius-xs)',
+              padding: '8px 10px',
+              fontSize: '10px',
+              color: '#cbd5e1',
+              lineHeight: '1.45',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}>
+              <div><strong>Responsable del Tratamiento:</strong> Hift Iron Box S.L. / Titular del Box.</div>
+              <div><strong>Finalidad:</strong> Ajuste técnico de intensidad de WODs, prevención de lesiones y seguimiento de fatiga.</div>
+              <div><strong>Base Jurídica:</strong> Consentimiento explícito del interesado (Art. 9.2.a RGPD).</div>
+              <div><strong>Destinatarios:</strong> Acceso reservado exclusivamente al Head Coach y titular. No se cederán a terceros.</div>
+              <div><strong>Derechos:</strong> Acceso, rectificación, supresión, limitación y revocación desde tu Perfil &gt; Privacidad.</div>
+            </div>
+          )}
+        </div>
+
         {/* Submit Button */}
         <button
           onClick={handleSave}
           className="btn-primary"
+          disabled={!healthConsentGiven}
           style={{
             width: '100%',
             padding: '13px',
@@ -645,7 +765,9 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '6px'
+            gap: '6px',
+            opacity: healthConsentGiven ? 1 : 0.5,
+            cursor: healthConsentGiven ? 'pointer' : 'not-allowed'
           }}
         >
           <Lock size={15} />

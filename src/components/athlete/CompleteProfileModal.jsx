@@ -204,6 +204,9 @@ export default function CompleteProfileModal({ isOpen, onClose }) {
                 outline: 'none'
               }}
             />
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px', lineHeight: '1.3' }}>
+              🔒 <em>Dato confidencial (Art. 9 RGPD): Solo accesible por tu entrenador para adaptar ejercicios.</em>
+            </span>
           </div>
 
           <button

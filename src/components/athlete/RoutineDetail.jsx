@@ -1,20 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  ArrowLeft, 
-  Play, 
-  Pause, 
-  RotateCcw, 
-  ChevronRight, 
-  Check, 
-  Award, 
-  Timer as TimerIcon, 
-  Volume2, 
-  VolumeX, 
-  Sparkles, 
-  Layers, 
-  Percent, 
-  Camera, 
-  Share2, 
+import {
+  ArrowLeft,
+  Play,
+  Pause,
+  RotateCcw,
+  ChevronRight,
+  Check,
+  Award,
+  Timer as TimerIcon,
+  Volume2,
+  VolumeX,
+  Sparkles,
+  Layers,
+  Percent,
+  Camera,
+  Share2,
   Flame,
   Dumbbell
 } from 'lucide-react';
@@ -40,9 +40,9 @@ function playGroupBeep(freq = 880, duration = 0.15) {
 }
 
 export default function RoutineDetail({ workout, onBack, onOpenTimerWithPreset }) {
-  const { 
-    completedExercises, 
-    toggleExercise, 
+  const {
+    completedExercises,
+    toggleExercise,
     celebrateCompletion,
     prs,
     openPercentageCalc,
@@ -108,8 +108,8 @@ export default function RoutineDetail({ workout, onBack, onOpenTimerWithPreset }
   // Look up relevant PR for exercise
   const getExercisePR = (name = '') => {
     const clean = name.toLowerCase();
-    const match = prs.find(p => 
-      clean.includes(p.exercise.toLowerCase()) || 
+    const match = prs.find(p =>
+      clean.includes(p.exercise.toLowerCase()) ||
       p.exercise.toLowerCase().includes(clean)
     );
     if (match) {
@@ -578,7 +578,7 @@ export default function RoutineDetail({ workout, onBack, onOpenTimerWithPreset }
                     const base1RM = relevantPr ? relevantPr.weight : 80;
 
                     return (
-                      <div 
+                      <div
                         onClick={(e) => {
                           e.stopPropagation();
                           openPercentageCalc({

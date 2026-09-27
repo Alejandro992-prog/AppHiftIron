@@ -208,6 +208,147 @@ export function AuthProvider({ children }) {
     return zone === 'traditional';
   };
 
+  // RGPD & LOPDGDD Consents state: { [userId]: { terms: true, health_readiness: bool, leaderboard: bool, updatedAt: string } }
+  const [consents, setConsents] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hift_user_consents_v1');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('hift_user_consents_v1', JSON.stringify(consents));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [consents]);
+
+  const getUserConsents = (userId = currentUser?.id) => {
+    if (!userId) return { terms: true, health_readiness: false, leaderboard: true };
+    return consents[userId] || { terms: true, health_readiness: false, leaderboard: true };
+  };
+
+  const updateConsent = (consentKey, value, userId = currentUser?.id) => {
+    if (!userId) return;
+    setConsents(prev => {
+      const userPrev = prev[userId] || { terms: true, health_readiness: false, leaderboard: true };
+      const updated = {
+        ...prev,
+        [userId]: {
+          ...userPrev,
+          [consentKey]: value,
+          updatedAt: new Date().toISOString(),
+          policyVersion: 'v1.0_2026_ES'
+        }
+      };
+      return updated;
+    });
+  };
+
+  // Portabilidad de Datos (Art. 20 RGPD): Genera y descarga un JSON con todos los datos personales
+  const exportUserData = (userId = currentUser?.id) => {
+    if (!userId) return;
+    try {
+      const athleteInfo = athletes.find(a => a.id === userId) || currentUser;
+      const userConsentData = consents[userId] || {};
+      
+      // Obtener logs de readiness del localStorage
+      let userReadiness = [];
+      try {
+        const rawReadiness = localStorage.getItem('hift_readiness_logs_v1');
+        if (rawReadiness) {
+          const parsed = JSON.parse(rawReadiness);
+          userReadiness = Object.values(parsed).filter(item => item.userId === userId);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      // Obtener PRs
+      let userPrs = {};
+      try {
+        const rawPrs = localStorage.getItem('hift_athlete_prs_v1');
+        if (rawPrs) {
+          const parsed = JSON.parse(rawPrs);
+          userPrs = parsed[userId] || {};
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      const exportPayload = {
+        title: 'Copia de Seguridad y Portabilidad de Datos Personales (RGPD Art. 20)',
+        source: 'Hift Iron Box App',
+        exportedAt: new Date().toISOString(),
+        regulation: 'Reglamento General de Protección de Datos (UE 2016/679) & LOPDGDD 3/2018 (España)',
+        dataSubject: {
+          id: athleteInfo.id,
+          name: athleteInfo.name,
+          username: athleteInfo.username,
+          email: athleteInfo.email,
+          membership: athleteInfo.membership,
+          role: athleteInfo.role,
+          focus: athleteInfo.focus || null,
+          phone: athleteInfo.phone || null,
+          injuriesReported: athleteInfo.injuries || 'Ninguna'
+        },
+        consentsAuditLog: userConsentData,
+        healthAndReadinessLogs: userReadiness,
+        personalRecords: userPrs
+      };
+
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportPayload, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute('href', dataStr);
+      downloadAnchor.setAttribute('download', `mis_datos_hift_box_${athleteInfo.username || 'usuario'}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      return true;
+    } catch (err) {
+      console.error('Error al exportar datos RGPD:', err);
+      return false;
+    }
+  };
+
+  // Derecho de Supresión / "Derecho al Olvido" (Art. 17 RGPD)
+  const deleteUserAccount = (userId = currentUser?.id) => {
+    if (!userId) return false;
+    // Eliminar de lista de atletas
+    setAthletes(prev => prev.filter(a => a.id !== userId));
+    
+    // Purgar consentimientos
+    setConsents(prev => {
+      const copy = { ...prev };
+      delete copy[userId];
+      return copy;
+    });
+
+    // Purgar registros de readiness de ese usuario
+    try {
+      const raw = localStorage.getItem('hift_readiness_logs_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const filtered = {};
+        Object.entries(parsed).forEach(([k, v]) => {
+          if (v.userId !== userId) filtered[k] = v;
+        });
+        localStorage.setItem('hift_readiness_logs_v1', JSON.stringify(filtered));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Si es el usuario activo actual, cerrar sesión
+    if (currentUser?.id === userId) {
+      setCurrentUser(null);
+    }
+    return true;
+  };
+
   return (
     <AuthContext.Provider value={{
       currentUser,
@@ -219,7 +360,11 @@ export function AuthProvider({ children }) {
       logout,
       addAthlete,
       completeProfile,
-      setCurrentUser
+      setCurrentUser,
+      getUserConsents,
+      updateConsent,
+      exportUserData,
+      deleteUserAccount
     }}>
       {children}
     </AuthContext.Provider>

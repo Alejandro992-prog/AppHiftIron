@@ -37,6 +37,8 @@ CREATE TABLE users (
     full_name VARCHAR(255) NOT NULL,
     role user_role DEFAULT 'athlete' NOT NULL,
     avatar_url TEXT,
+    leaderboard_visible BOOLEAN DEFAULT TRUE NOT NULL, -- Privacidad por diseño: visibilidad en rankings
+    health_consent_granted BOOLEAN DEFAULT FALSE NOT NULL, -- Consentimiento explícito Art. 9 RGPD para readiness
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
@@ -190,7 +192,37 @@ CREATE TABLE athlete_readiness_logs (
 );
 
 -- ============================================================================
--- 7. POLÍTICAS ROW LEVEL SECURITY (RLS)
+-- 7. CUMPLIMIENTO RGPD / LOPDGDD (PROTECCIÓN DE DATOS - ESPAÑA / UE)
+-- ============================================================================
+
+-- Registro de Consentimientos (Art. 7 RGPD & Art. 6 LOPDGDD - Responsabilidad Proactiva)
+CREATE TABLE user_consents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+    consent_type VARCHAR(50) NOT NULL, -- 'terms_service', 'health_data_readiness', 'box_leaderboard', 'marketing'
+    granted BOOLEAN NOT NULL DEFAULT FALSE,
+    policy_version VARCHAR(20) DEFAULT 'v1.0_2026' NOT NULL,
+    legal_basis VARCHAR(50) DEFAULT 'explicit_consent_art_9_2_a' NOT NULL,
+    granted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    CONSTRAINT unique_user_consent_type UNIQUE (user_id, consent_type)
+);
+
+-- Solicitudes de Derechos ARCO-POL (Acceso, Supresión, Portabilidad, Oposición)
+CREATE TABLE data_subject_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+    request_type VARCHAR(50) NOT NULL, -- 'portability_export', 'erasure_forget', 'rectification', 'restriction'
+    status VARCHAR(30) DEFAULT 'completed' NOT NULL, -- 'pending', 'processing', 'completed', 'rejected'
+    requested_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    resolved_at TIMESTAMPTZ DEFAULT NOW(),
+    notes TEXT
+);
+
+-- ============================================================================
+-- 8. POLÍTICAS ROW LEVEL SECURITY (RLS)
 -- ============================================================================
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -199,6 +231,8 @@ ALTER TABLE athlete_assigned_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workout_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE athlete_prs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE athlete_readiness_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_consents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE data_subject_requests ENABLE ROW LEVEL SECURITY;
 
 -- Regla 1: Un atleta puede ver su propio usuario, un coach/admin ve a todos
 CREATE POLICY users_policy ON users
@@ -231,12 +265,28 @@ CREATE POLICY logs_owner_policy ON workout_logs
         SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'head_coach')
     ));
 
--- Regla 4: Logs de Bienestar (Readiness) - Atleta gestiona el suyo, el Coach tiene visibilidad total
+-- Regla 4: Logs de Bienestar (Readiness) - Datos de Salud Art. 9 RGPD
+-- Requiere consentimiento explícito y visibilidad restringida al atleta y su Head Coach asignado
 CREATE POLICY readiness_policy ON athlete_readiness_logs
     FOR ALL
     USING (auth.uid() = user_id OR EXISTS (
         SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'head_coach')
     ));
+
+-- Regla 5: Gestión de Consentimientos RGPD - Solo el propio titular y el DPO/Admin
+CREATE POLICY consents_policy ON user_consents
+    FOR ALL
+    USING (auth.uid() = user_id OR EXISTS (
+        SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin'
+    ));
+
+-- Regla 6: Solicitudes ARCO-POL - Solo el atleta titular y el Administrador
+CREATE POLICY dsar_policy ON data_subject_requests
+    FOR ALL
+    USING (auth.uid() = user_id OR EXISTS (
+        SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin'
+    ));
 `;
 
 export default DATABASE_SCHEMA_DDL;
+

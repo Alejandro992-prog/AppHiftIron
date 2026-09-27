@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
 import { LogOut, Shield } from 'lucide-react';
 
-export default function Header() {
+export default function Header({ onOpenPrivacy }) {
   const { currentUser, isAdmin, logout } = useAuth();
   const { customLogoUrl, activeZone, setActiveZone, setActiveWorkoutDetail } = useWorkouts();
 
@@ -59,15 +59,20 @@ export default function Header() {
 
       {/* User Avatar & Logout */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          padding: '4px 8px 4px 4px',
-          borderRadius: 'var(--radius-full)',
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-subtle)'
-        }}>
+        <div 
+          onClick={onOpenPrivacy}
+          title="Ver perfil y gestión de privacidad RGPD"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '4px 8px 4px 4px',
+            borderRadius: 'var(--radius-full)',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            cursor: 'pointer'
+          }}
+        >
           <div style={{
             width: '26px',
             height: '26px',
@@ -87,6 +92,28 @@ export default function Header() {
             {currentUser?.name?.split(' ')[0]}
           </span>
         </div>
+
+        {/* Privacy & RGPD Rights Button */}
+        {onOpenPrivacy && (
+          <button
+            onClick={onOpenPrivacy}
+            title="Gestión de Privacidad y Derechos RGPD"
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(34, 197, 94, 0.1)',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              color: '#22c55e',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer'
+            }}
+          >
+            <Shield size={15} />
+          </button>
+        )}
 
         {/* Logout Button */}
         <button

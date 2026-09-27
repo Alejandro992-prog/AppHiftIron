@@ -14,6 +14,7 @@ import CompleteProfileModal from './components/athlete/CompleteProfileModal';
 import PercentageCalculatorModal from './components/calculator/PercentageCalculatorModal';
 import InstagramStoryModal from './components/social/InstagramStoryModal';
 import ReadinessCheckinModal from './components/readiness/ReadinessCheckinModal';
+import PrivacyAndDataModal from './components/privacy/PrivacyAndDataModal';
 import { Sparkles } from 'lucide-react';
 
 function MainApp() {
@@ -39,6 +40,7 @@ function MainApp() {
   });
   const [timerPreset, setTimerPreset] = useState(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
 
   // When user logs in, ensure athletes always land on 'hub' (¿Qué vas a entrenar hoy? Competidor vs Gimnasio)
   useEffect(() => {
@@ -87,7 +89,7 @@ function MainApp() {
     <div className="app-viewport-wrapper">
       <div className="mobile-app-container">
         {/* Top Header with Brand and Zone Hub Switcher */}
-        <Header />
+        <Header onOpenPrivacy={() => setIsPrivacyModalOpen(true)} />
 
         {/* Invited user profile completion alert banner */}
         {currentUser?.status === 'invited' && (
@@ -193,6 +195,12 @@ function MainApp() {
         <ReadinessCheckinModal
           isOpen={isReadinessModalOpen}
           onClose={closeReadinessModal}
+        />
+
+        {/* GDPR & LOPDGDD Privacy & Data Subject Rights Modal */}
+        <PrivacyAndDataModal
+          isOpen={isPrivacyModalOpen}
+          onClose={() => setIsPrivacyModalOpen(false)}
         />
       </div>
     </div>
