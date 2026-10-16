@@ -19,7 +19,15 @@ import BrandLogo from './components/common/BrandLogo';
 import { Sparkles } from 'lucide-react';
 
 function MainApp() {
-  const { isAuthenticated, currentUser, isAdmin, isLoadingAuth, isImpersonatingAthlete, revertToCoach } = useAuth();
+  const { 
+    isAuthenticated, 
+    currentUser, 
+    isAdmin, 
+    isLoadingAuth, 
+    isImpersonatingAthlete, 
+    revertToCoach,
+    isRecoveryMode
+  } = useAuth();
   const { 
     activeZone,
     setActiveZone,
@@ -124,6 +132,11 @@ function MainApp() {
         </div>
       </div>
     );
+  }
+
+  // Si el usuario llega desde un enlace de recuperación de contraseña de Supabase
+  if (isRecoveryMode) {
+    return <LoginScreen initialView="reset_password" />;
   }
 
   // If not logged in, show the clean Login Screen where users enter email/user & password

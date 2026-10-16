@@ -7,7 +7,12 @@ import {
   Lock, 
   Check, 
   Activity, 
-  Users 
+  Users,
+  KeyRound,
+  CheckCircle2,
+  AlertCircle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -17,14 +22,22 @@ export default function PrivacyAndDataModal({ isOpen, onClose }) {
     getUserConsents, 
     updateConsent, 
     exportUserData, 
-    deleteUserAccount 
+    deleteUserAccount,
+    updateUserPassword 
   } = useAuth();
 
-  const [activeTab, setActiveTab] = useState('consents'); // 'consents' | 'rights' | 'policy'
+  const [activeTab, setActiveTab] = useState('consents'); // 'consents' | 'rights' | 'security' | 'policy'
   const [exportSuccess, setExportSuccess] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteText, setDeleteText] = useState('');
   const [deleteError, setDeleteError] = useState(null);
+
+  // Estados de cambio de contraseña
+  const [changePassword, setChangePassword] = useState('');
+  const [confirmChangePassword, setConfirmChangePassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState(null);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   if (!isOpen || !currentUser) return null;
 
@@ -50,6 +63,35 @@ export default function PrivacyAndDataModal({ isOpen, onClose }) {
     setDeleteError(null);
     await deleteUserAccount(currentUser.id);
     onClose();
+  };
+
+  const handlePasswordChangeSubmit = async (e) => {
+    e.preventDefault();
+    if (changePassword.length < 6) {
+      setPasswordMsg({ type: 'error', text: 'La contraseña debe contener al menos 6 caracteres.' });
+      return;
+    }
+    if (changePassword !== confirmChangePassword) {
+      setPasswordMsg({ type: 'error', text: 'Las contraseñas no coinciden.' });
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    setPasswordMsg(null);
+    try {
+      const res = await updateUserPassword(changePassword);
+      if (res.success) {
+        setPasswordMsg({ type: 'success', text: '¡Contraseña actualizada con éxito!' });
+        setChangePassword('');
+        setConfirmChangePassword('');
+      } else {
+        setPasswordMsg({ type: 'error', text: res.error || 'No se pudo actualizar la contraseña.' });
+      }
+    } catch {
+      setPasswordMsg({ type: 'error', text: 'Error al conectar con el servidor.' });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
   };
 
   return (
@@ -172,32 +214,52 @@ export default function PrivacyAndDataModal({ isOpen, onClose }) {
             onClick={() => setActiveTab('rights')}
             style={{
               flex: 1,
-              padding: '8px 10px',
+              padding: '8px 8px',
               borderRadius: 'var(--radius-sm)',
               border: 'none',
-              fontSize: '11.5px',
+              fontSize: '11px',
               fontWeight: activeTab === 'rights' ? '800' : '600',
               background: activeTab === 'rights' ? 'var(--brand-gradient)' : 'transparent',
               color: '#ffffff',
               cursor: 'pointer',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap'
             }}
           >
-            Tus Derechos (ARCO)
+            Tus Derechos
+          </button>
+          <button
+            onClick={() => setActiveTab('security')}
+            style={{
+              flex: 1,
+              padding: '8px 8px',
+              borderRadius: 'var(--radius-sm)',
+              border: 'none',
+              fontSize: '11px',
+              fontWeight: activeTab === 'security' ? '800' : '600',
+              background: activeTab === 'security' ? 'var(--brand-gradient)' : 'transparent',
+              color: '#ffffff',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Seguridad & Clave
           </button>
           <button
             onClick={() => setActiveTab('policy')}
             style={{
               flex: 1,
-              padding: '8px 10px',
+              padding: '8px 8px',
               borderRadius: 'var(--radius-sm)',
               border: 'none',
-              fontSize: '11.5px',
+              fontSize: '11px',
               fontWeight: activeTab === 'policy' ? '800' : '600',
               background: activeTab === 'policy' ? 'var(--brand-gradient)' : 'transparent',
               color: '#ffffff',
               cursor: 'pointer',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap'
             }}
           >
             Aviso Legal
@@ -469,7 +531,141 @@ export default function PrivacyAndDataModal({ isOpen, onClose }) {
           </div>
         )}
 
-        {/* TAB 3: POLÍTICA INFORMATIVA DETALLADA (2ª Capa RGPD / AEPD) */}
+        {/* TAB 3: SEGURIDAD Y CAMBIO VOLUNTARIO DE CONTRASEÑA */}
+        {activeTab === 'security' && (
+          <form 
+            onSubmit={handlePasswordChangeSubmit}
+            className="animate-fade-in"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              padding: '16px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-subtle)'
+            }}
+          >
+            <div>
+              <h3 style={{ fontSize: '14px', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <KeyRound size={17} color="var(--brand-pink)" />
+                <span>Actualizar Contraseña de Acceso</span>
+              </h3>
+              <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                Tu contraseña se almacena con cifrado Bcrypt unidireccional en el servidor de Supabase Auth.
+              </p>
+            </div>
+
+            {passwordMsg && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: passwordMsg.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'var(--color-danger-bg)',
+                border: passwordMsg.type === 'success' ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(239, 68, 68, 0.3)',
+                color: passwordMsg.type === 'success' ? 'var(--color-success)' : 'var(--color-danger)',
+                fontSize: '12px',
+                fontWeight: '600'
+              }}>
+                {passwordMsg.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                <span>{passwordMsg.text}</span>
+              </div>
+            )}
+
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '5px' }}>
+                NUEVA CONTRASEÑA (mínimo 6 caracteres)
+              </label>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'var(--bg-secondary)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '10px 12px',
+                border: '1px solid var(--border-subtle)'
+              }}>
+                <Lock size={15} color="var(--brand-lilac-light)" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Escribe tu nueva contraseña"
+                  value={changePassword}
+                  onChange={(e) => setChangePassword(e.target.value)}
+                  minLength={6}
+                  required
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    outline: 'none',
+                    width: '100%',
+                    fontSize: '13px',
+                    color: '#ffffff'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '5px' }}>
+                CONFIRMAR NUEVA CONTRASEÑA
+              </label>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'var(--bg-secondary)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '10px 12px',
+                border: '1px solid var(--border-subtle)'
+              }}>
+                <Lock size={15} color="var(--brand-lilac-light)" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Repite tu nueva contraseña"
+                  value={confirmChangePassword}
+                  onChange={(e) => setConfirmChangePassword(e.target.value)}
+                  minLength={6}
+                  required
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    outline: 'none',
+                    width: '100%',
+                    fontSize: '13px',
+                    color: '#ffffff'
+                  }}
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isUpdatingPassword || changePassword.length < 6 || changePassword !== confirmChangePassword}
+              className="btn-primary"
+              style={{
+                padding: '11px',
+                fontSize: '13px',
+                borderRadius: 'var(--radius-sm)',
+                marginTop: '4px',
+                opacity: (isUpdatingPassword || changePassword.length < 6 || changePassword !== confirmChangePassword) ? 0.6 : 1,
+                cursor: (isUpdatingPassword || changePassword.length < 6 || changePassword !== confirmChangePassword) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              <span>{isUpdatingPassword ? 'Actualizando...' : 'Guardar Nueva Contraseña'}</span>
+            </button>
+          </form>
+        )}
+
+        {/* TAB 4: POLÍTICA INFORMATIVA DETALLADA (2ª Capa RGPD / AEPD) */}
         {activeTab === 'policy' && (
           <div style={{
             display: 'flex',

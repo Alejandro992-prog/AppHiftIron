@@ -7,9 +7,11 @@ import {
   registerAthleteInSupabaseAuth,
   deleteAthleteFromSupabase,
   fetchConsentsFromSupabase,
-  upsertConsentsInSupabase
+  upsertConsentsInSupabase,
+  requestPasswordReset,
+  updateUserPassword
 } from '../services/supabaseService';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, initialAuthFlowType } from '../lib/supabase';
 import { safeLogger } from '../utils/validators';
 
 const AuthContext = createContext();
@@ -23,6 +25,9 @@ export function AuthProvider({ children }) {
 
   // Estado de carga inicial mientras se verifica la sesión en Supabase Auth
   const [isLoadingAuth, setIsLoadingAuth] = useState(() => Boolean(isSupabaseConfigured && supabase));
+
+  // Modo de recuperación de contraseña (activado por enlace con hash recovery)
+  const [isRecoveryMode, setIsRecoveryMode] = useState(() => initialAuthFlowType === 'recovery');
 
   // Sesión de coach original cuando se previsualiza la app como alumno
   const [coachSessionUser, setCoachSessionUser] = useState(null);
@@ -137,11 +142,13 @@ export function AuthProvider({ children }) {
       if (isMounted) setIsLoadingAuth(false);
     });
 
-    // Suscribirse a cambios en tiempo real (login, logout, refresh de token)
+    // Suscribirse a cambios en tiempo real (login, logout, refresh de token, recuperación)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
 
-      if (event === 'SIGNED_IN' && session?.user) {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryMode(true);
+      } else if (event === 'SIGNED_IN' && session?.user) {
         const profile = await fetchAthleteProfile(session.user.id);
         const userObj = buildUserObject(session.user, profile);
         setCurrentUser(userObj);
@@ -152,6 +159,7 @@ export function AuthProvider({ children }) {
         setCurrentUser(null);
         setAthletes([]);
         setCoachSessionUser(null);
+        setIsRecoveryMode(false);
       }
       setIsLoadingAuth(false);
     });
@@ -431,7 +439,11 @@ export function AuthProvider({ children }) {
       getUserConsents,
       updateConsent,
       exportUserData,
-      deleteUserAccount
+      deleteUserAccount,
+      isRecoveryMode,
+      setIsRecoveryMode,
+      requestPasswordReset,
+      updateUserPassword
     }}>
       {children}
     </AuthContext.Provider>

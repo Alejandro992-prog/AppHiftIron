@@ -480,6 +480,57 @@ export async function logoutSupabaseAuth() {
   }
 }
 
+// Solicitar correo de restablecimiento de contraseña
+export async function requestPasswordReset(email) {
+  if (!isSupabaseConfigured || !supabase) {
+    return { success: false, error: 'Supabase no está configurado en .env' };
+  }
+  try {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail) {
+      return { success: false, error: 'Introduce un correo electrónico válido.' };
+    }
+    const redirectTo = `${window.location.origin}${window.location.pathname}`;
+    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo
+    });
+
+    if (error) {
+      return { success: false, error: formatSafeErrorMessage(error, 'Error al enviar el correo de recuperación.') };
+    }
+
+    return { success: true };
+  } catch (err) {
+    safeLogger.error('[Supabase requestPasswordReset Error]:', err);
+    return { success: false, error: formatSafeErrorMessage(err, 'Error al procesar la solicitud.') };
+  }
+}
+
+// Actualizar contraseña de usuario autenticado o en flujo de recuperación
+export async function updateUserPassword(newPassword) {
+  if (!isSupabaseConfigured || !supabase) {
+    return { success: false, error: 'Supabase no está configurado en .env' };
+  }
+  try {
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, error: 'La contraseña debe contener al menos 6 caracteres.' };
+    }
+
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword
+    });
+
+    if (error) {
+      return { success: false, error: formatSafeErrorMessage(error, 'Error al actualizar la contraseña.') };
+    }
+
+    return { success: true, user: data.user };
+  } catch (err) {
+    safeLogger.error('[Supabase updateUserPassword Error]:', err);
+    return { success: false, error: formatSafeErrorMessage(err, 'Error al actualizar la contraseña.') };
+  }
+}
+
 // Obtener perfil detallado de atleta por UUID
 export async function fetchAthleteProfile(userId) {
   if (!isSupabaseConfigured || !supabase || !userId) return null;
