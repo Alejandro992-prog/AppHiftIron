@@ -5,14 +5,9 @@ import {
   Download, 
   Trash2, 
   Lock, 
-  Eye, 
-  FileText, 
-  AlertTriangle, 
   Check, 
-  ChevronRight,
-  ExternalLink,
-  Activity,
-  Users
+  Activity, 
+  Users 
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -29,6 +24,7 @@ export default function PrivacyAndDataModal({ isOpen, onClose }) {
   const [exportSuccess, setExportSuccess] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteText, setDeleteText] = useState('');
+  const [deleteError, setDeleteError] = useState(null);
 
   if (!isOpen || !currentUser) return null;
 
@@ -42,12 +38,17 @@ export default function PrivacyAndDataModal({ isOpen, onClose }) {
     }
   };
 
-  const handleDeleteAccount = () => {
-    if (deleteText.trim().toUpperCase() !== 'ELIMINAR') {
-      alert('Por favor, escribe "ELIMINAR" para confirmar la supresión definitiva.');
+  const handleDeleteAccount = async () => {
+    if (currentUser?.isPreviewMode) {
+      setDeleteError('No puedes eliminar la cuenta de un alumno mientras estás en modo vista previa.');
       return;
     }
-    deleteUserAccount(currentUser.id);
+    if (deleteText.trim().toUpperCase() !== 'ELIMINAR') {
+      setDeleteError('Por favor, escribe exactamente "ELIMINAR" para confirmar la supresión definitiva.');
+      return;
+    }
+    setDeleteError(null);
+    await deleteUserAccount(currentUser.id);
     onClose();
   };
 
@@ -420,19 +421,25 @@ export default function PrivacyAndDataModal({ isOpen, onClose }) {
                       outline: 'none'
                     }}
                   />
+                  {deleteError && (
+                    <span style={{ fontSize: '11px', color: '#ef4444', fontWeight: '700' }}>
+                      {deleteError}
+                    </span>
+                  )}
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button
                       onClick={handleDeleteAccount}
+                      disabled={currentUser?.isPreviewMode}
                       style={{
                         flex: 1,
-                        background: '#ef4444',
+                        background: currentUser?.isPreviewMode ? '#6b7280' : '#ef4444',
                         border: 'none',
                         color: '#ffffff',
                         padding: '8px',
                         borderRadius: 'var(--radius-xs)',
                         fontSize: '12px',
                         fontWeight: '800',
-                        cursor: 'pointer'
+                        cursor: currentUser?.isPreviewMode ? 'not-allowed' : 'pointer'
                       }}
                     >
                       Confirmar Borrado
@@ -441,6 +448,7 @@ export default function PrivacyAndDataModal({ isOpen, onClose }) {
                       onClick={() => {
                         setDeleteConfirmOpen(false);
                         setDeleteText('');
+                        setDeleteError(null);
                       }}
                       style={{
                         padding: '8px 12px',

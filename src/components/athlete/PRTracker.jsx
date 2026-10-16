@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trophy, Plus, Trash2, Calendar, Award, Dumbbell } from 'lucide-react';
+import { Trophy, Plus, Trash2, Calendar } from 'lucide-react';
 import { useWorkouts } from '../../context/WorkoutContext';
 
 export default function PRTracker() {

@@ -8,13 +8,15 @@ export default function BottomNav({ activeTab, setActiveTab }) {
   const { activeZone, setActiveZone, setActiveWorkoutDetail } = useWorkouts();
 
   const handleTabClick = (tabId) => {
-    setActiveWorkoutDetail(null);
     if (tabId === 'hub') {
+      setActiveWorkoutDetail(null);
       setActiveZone('dashboard');
       setActiveTab('hub');
     } else if (tabId === 'admin') {
+      setActiveWorkoutDetail(null);
       setActiveTab('admin');
     } else {
+      // Para 'timer' o 'workouts', delegar en setActiveTab sin forzar borrado del detalle
       setActiveTab(tabId);
     }
   };
@@ -25,38 +27,38 @@ export default function BottomNav({ activeTab, setActiveTab }) {
   const tabs = isAdmin ? [
     { 
       id: 'admin', 
-      label: 'Gestión Coach', 
+      label: 'Coach', 
       icon: ShieldCheck,
       isActive: activeTab === 'admin'
     },
     { 
       id: 'hub', 
-      label: 'Elegir Zona', 
+      label: 'Inicio', 
       icon: LayoutGrid, 
       isActive: isHubActive || (activeTab === 'workouts' && activeZone === 'dashboard')
     },
     { 
       id: 'timer', 
-      label: 'Cronómetro', 
+      label: 'Timer', 
       icon: Timer,
       isActive: activeTab === 'timer'
     }
   ] : [
     { 
       id: 'hub', 
-      label: 'Elegir Zona', 
+      label: 'Inicio', 
       icon: LayoutGrid, 
       isActive: isHubActive 
     },
     { 
       id: 'workouts', 
-      label: activeZone === 'competitors' ? 'Competidor' : 'Gimnasio', 
+      label: activeZone === 'competitors' ? 'Competidores' : activeZone === 'traditional' ? 'Gimnasio' : 'Entrenar', 
       icon: activeZone === 'competitors' ? Flame : Dumbbell,
       isActive: isWorkoutsActive 
     },
     { 
       id: 'timer', 
-      label: 'Cronómetro', 
+      label: 'Timer', 
       icon: Timer,
       isActive: activeTab === 'timer'
     }

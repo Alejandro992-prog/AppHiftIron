@@ -5,6 +5,15 @@
  * Permite a los coaches programar semanas futuras, revisar semanas pasadas y clonar semanas.
  */
 
+// Formatea una fecha a "YYYY-MM-DD" en HORA LOCAL del usuario (evita desincronización por UTC a medianoche)
+export function formatLocalDate(date = new Date()) {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Obtiene el lunes de la semana para una fecha dada
 export function getMonday(d = new Date()) {
   const date = new Date(d);
@@ -15,13 +24,10 @@ export function getMonday(d = new Date()) {
   return date;
 }
 
-// Genera la clave de semana única basada en el lunes: "YYYY-MM-DD"
+// Genera la clave de semana única basada en el lunes: "YYYY-MM-DD" en hora local
 export function getWeekKey(d = new Date()) {
   const monday = getMonday(d);
-  const year = monday.getFullYear();
-  const month = String(monday.getMonth() + 1).padStart(2, '0');
-  const day = String(monday.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return formatLocalDate(monday);
 }
 
 // Desplaza una clave de semana N semanas adelante o atrás

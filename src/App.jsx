@@ -15,10 +15,11 @@ import PercentageCalculatorModal from './components/calculator/PercentageCalcula
 import InstagramStoryModal from './components/social/InstagramStoryModal';
 import ReadinessCheckinModal from './components/readiness/ReadinessCheckinModal';
 import PrivacyAndDataModal from './components/privacy/PrivacyAndDataModal';
+import BrandLogo from './components/common/BrandLogo';
 import { Sparkles } from 'lucide-react';
 
 function MainApp() {
-  const { isAuthenticated, currentUser, isAdmin } = useAuth();
+  const { isAuthenticated, currentUser, isAdmin, isLoadingAuth, isImpersonatingAthlete, revertToCoach } = useAuth();
   const { 
     activeZone,
     setActiveZone,
@@ -39,29 +40,91 @@ function MainApp() {
     return isAdmin ? 'admin' : 'hub';
   });
   const [timerPreset, setTimerPreset] = useState(null);
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return Boolean(params.get('invite'));
+    } catch {
+      return false;
+    }
+  });
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
 
-  // When user logs in, ensure athletes always land on 'hub' (¿Qué vas a entrenar hoy? Competidor vs Gimnasio)
+  // Clean invite param from URL once handled
   useEffect(() => {
-    if (currentUser) {
-      if (isAdmin) {
-        setActiveTab('admin');
-      } else {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('invite')) {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    } catch {}
+  }, []);
+
+  // When a new user logs in, ensure athletes land on 'hub' and coaches on 'admin'
+  const [prevUserId, setPrevUserId] = useState(currentUser?.id);
+  if (currentUser && currentUser.id !== prevUserId) {
+    setPrevUserId(currentUser.id);
+    setActiveTab(isAdmin ? 'admin' : 'hub');
+  }
+
+  // Historial y botón "Atrás" del móvil (Android/iOS Swipe): evita cerrar la app por error
+  useEffect(() => {
+    // Inicializar estado base en el historial
+    window.history.replaceState({ screen: 'root' }, '');
+
+    const handlePopState = () => {
+      // Si hay un modal abierto, cerrarlo primero
+      if (isProfileModalOpen) {
+        setIsProfileModalOpen(false);
+        return;
+      }
+      if (isPrivacyModalOpen) {
+        setIsPrivacyModalOpen(false);
+        return;
+      }
+      // Si hay un detalle de rutina abierto, volver a la lista
+      if (activeWorkoutDetail) {
+        setActiveWorkoutDetail(null);
+        return;
+      }
+      // Si está en otra pestaña que no sea el hub principal, volver al hub
+      if (activeTab !== 'hub') {
         setActiveTab('hub');
         setActiveZone('dashboard');
-        setActiveWorkoutDetail(null);
       }
-    }
-  }, [currentUser?.id, isAdmin, setActiveZone, setActiveWorkoutDetail]);
+    };
 
-  // Check URL for invite token
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('invite') && currentUser) {
-      setIsProfileModalOpen(true);
-    }
-  }, [currentUser]);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeWorkoutDetail, isProfileModalOpen, isPrivacyModalOpen, activeTab, setActiveZone, setActiveWorkoutDetail]);
+
+  // Pantalla de carga mientras se valida la sesión con Supabase Auth
+  if (isLoadingAuth) {
+    return (
+      <div className="app-viewport-wrapper">
+        <div className="mobile-app-container" style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '100dvh',
+          gap: '20px'
+        }}>
+          <BrandLogo size="lg" layout="vertical" />
+          <div style={{
+            width: '30px',
+            height: '30px',
+            border: '3px solid rgba(255, 45, 120, 0.2)',
+            borderTopColor: 'var(--brand-pink)',
+            borderRadius: '50%'
+          }} className="animate-spin" />
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600' }}>
+            Iniciando sesión segura...
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   // If not logged in, show the clean Login Screen where users enter email/user & password
   if (!isAuthenticated) {
@@ -70,13 +133,14 @@ function MainApp() {
 
   const handleOpenTimerWithPreset = (preset) => {
     setTimerPreset(preset);
-    setActiveWorkoutDetail(null);
     setActiveTab('timer');
+    window.history.pushState({ screen: 'timer' }, '');
   };
 
   const handleNavigateToRoutineFromAdmin = (workout) => {
     setActiveWorkoutDetail(workout);
     setActiveTab('workouts');
+    window.history.pushState({ screen: 'routineDetail' }, '');
   };
 
   const handleSwitchToStudentView = () => {
@@ -89,12 +153,54 @@ function MainApp() {
     <div className="app-viewport-wrapper">
       <div className="mobile-app-container">
         {/* Top Header with Brand and Zone Hub Switcher */}
-        <Header onOpenPrivacy={() => setIsPrivacyModalOpen(true)} />
+        <Header onOpenPrivacy={() => {
+          setIsPrivacyModalOpen(true);
+          window.history.pushState({ screen: 'privacyModal' }, '');
+        }} />
+
+        {/* Coach Impersonation Banner */}
+        {isImpersonatingAthlete && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(249, 115, 22, 0.2) 100%)',
+            borderBottom: '1px solid rgba(234, 179, 8, 0.4)',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '11.5px',
+            color: '#ffffff'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>👁️ <strong>Vista previa:</strong> {currentUser?.name}</span>
+            </div>
+            <button
+              onClick={() => {
+                revertToCoach();
+                setActiveTab('admin');
+              }}
+              style={{
+                fontSize: '10.5px',
+                fontWeight: '800',
+                background: '#eab308',
+                color: '#000000',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                padding: '3px 8px',
+                cursor: 'pointer'
+              }}
+            >
+              Volver a Coach
+            </button>
+          </div>
+        )}
 
         {/* Invited user profile completion alert banner */}
         {currentUser?.status === 'invited' && (
           <div 
-            onClick={() => setIsProfileModalOpen(true)}
+            onClick={() => {
+              setIsProfileModalOpen(true);
+              window.history.pushState({ screen: 'profileModal' }, '');
+            }}
             style={{
               background: 'linear-gradient(135deg, rgba(255, 45, 120, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)',
               borderBottom: '1px solid rgba(255, 45, 120, 0.3)',
@@ -121,18 +227,27 @@ function MainApp() {
             /* Routine Detail with Step-by-Step Exercises and Timers */
             <RoutineDetail 
               workout={activeWorkoutDetail}
-              onBack={() => setActiveWorkoutDetail(null)}
+              onBack={() => {
+                setActiveWorkoutDetail(null);
+                if (window.history.state?.screen === 'routineDetail') {
+                  window.history.back();
+                }
+              }}
               onOpenTimerWithPreset={handleOpenTimerWithPreset}
             />
           ) : (
             /* Views depending on active tab and zone */
             <>
               {/* COACH ADMIN VIEW */}
-              {activeTab === 'admin' && isAdmin && (
-                <AdminPanel 
-                  onNavigateToRoutine={handleNavigateToRoutineFromAdmin}
-                  onSwitchToStudentView={handleSwitchToStudentView}
-                />
+              {activeTab === 'admin' && (
+                isAdmin ? (
+                  <AdminPanel 
+                    onNavigateToRoutine={handleNavigateToRoutineFromAdmin}
+                    onSwitchToStudentView={handleSwitchToStudentView}
+                  />
+                ) : (
+                  <ZoneSelectorDashboard />
+                )
               )}
 
               {/* HUB & WORKOUTS TAB */}
@@ -153,55 +268,72 @@ function MainApp() {
                   )}
                 </>
               )}
-
-              {/* TIMER TAB */}
-              {activeTab === 'timer' && (
-                <BoxTimer initialPreset={timerPreset} />
-              )}
             </>
           )}
+
+          {/* TIMER TAB - Mantenido montado siempre para que no se resetee el cronómetro al cambiar de pestaña */}
+          <div style={{ 
+            display: activeTab === 'timer' && !activeWorkoutDetail ? 'block' : 'none',
+            width: '100%'
+          }}>
+            <BoxTimer initialPreset={timerPreset} />
+          </div>
         </main>
 
         {/* Bottom Navigation */}
         <BottomNav 
           activeTab={activeTab} 
           setActiveTab={(tab) => {
-            setActiveWorkoutDetail(null);
+            // Si cambia a 'timer', mantenemos el detalle en background
+            // Si pulsa 'hub' explícitamente desde workouts, cerramos detalle
+            if (tab === 'hub') {
+              setActiveWorkoutDetail(null);
+            }
             setActiveTab(tab);
           }} 
         />
 
         {/* Profile Completion Modal */}
-        <CompleteProfileModal
-          isOpen={isProfileModalOpen}
-          onClose={() => setIsProfileModalOpen(false)}
-        />
+        {isProfileModalOpen && (
+          <CompleteProfileModal
+            isOpen={isProfileModalOpen}
+            onClose={() => setIsProfileModalOpen(false)}
+          />
+        )}
 
         {/* 1RM & Barbell Percentage Calculator Modal */}
-        <PercentageCalculatorModal
-          isOpen={isPercentageCalcOpen}
-          onClose={closePercentageCalc}
-          initialData={percentageCalcPreset}
-        />
+        {isPercentageCalcOpen && (
+          <PercentageCalculatorModal
+            isOpen={isPercentageCalcOpen}
+            onClose={closePercentageCalc}
+            initialData={percentageCalcPreset}
+          />
+        )}
 
         {/* Instagram Stories Generator Modal */}
-        <InstagramStoryModal
-          isOpen={isStoryModalOpen}
-          onClose={closeStoryModal}
-          workoutData={storyWorkoutData}
-        />
+        {isStoryModalOpen && (
+          <InstagramStoryModal
+            isOpen={isStoryModalOpen}
+            onClose={closeStoryModal}
+            workoutData={storyWorkoutData}
+          />
+        )}
 
         {/* Daily Readiness & RPE Check-in Modal */}
-        <ReadinessCheckinModal
-          isOpen={isReadinessModalOpen}
-          onClose={closeReadinessModal}
-        />
+        {isReadinessModalOpen && (
+          <ReadinessCheckinModal
+            isOpen={isReadinessModalOpen}
+            onClose={closeReadinessModal}
+          />
+        )}
 
         {/* GDPR & LOPDGDD Privacy & Data Subject Rights Modal */}
-        <PrivacyAndDataModal
-          isOpen={isPrivacyModalOpen}
-          onClose={() => setIsPrivacyModalOpen(false)}
-        />
+        {isPrivacyModalOpen && (
+          <PrivacyAndDataModal
+            isOpen={isPrivacyModalOpen}
+            onClose={() => setIsPrivacyModalOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

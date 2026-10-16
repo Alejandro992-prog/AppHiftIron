@@ -78,7 +78,7 @@ export const COMPETITOR_WORKOUTS = [
         name: 'BLOQUE 4: METCON ENGINE - "OXYGEN DEBT" (FOR TIME)',
         duration: '20 min',
         blockType: 'metcon_wod',
-        targetTimerType: 'for_time',
+        targetTimerType: 'fortime',
         timerMinutes: 20,
         groupTimer: { seconds: 1200, label: 'Time Cap: 20 MIN (Cronómetro WOD)', type: 'countdown' },
         exercises: [
@@ -208,7 +208,7 @@ export const COMPETITOR_WORKOUTS = [
         name: 'BLOQUE 3: METCON AERÓBICO - 4 RONDAS POR TIEMPO',
         duration: '25 min',
         blockType: 'metcon_wod',
-        targetTimerType: 'for_time',
+        targetTimerType: 'fortime',
         timerMinutes: 22,
         groupTimer: { seconds: 1320, label: 'Time Cap: 22 MIN', type: 'countdown' },
         exercises: [
@@ -293,7 +293,7 @@ export const COMPETITOR_WORKOUTS = [
         name: 'BLOQUE 3: BENCHMARK WOD: "IRON CLASH" (21-15-9 FOR TIME)',
         duration: '18 min',
         blockType: 'metcon_wod',
-        targetTimerType: 'for_time',
+        targetTimerType: 'fortime',
         timerMinutes: 15,
         groupTimer: { seconds: 900, label: 'Time Cap: 15 MIN (Sprint WOD)', type: 'countdown' },
         exercises: [

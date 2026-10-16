@@ -4,8 +4,7 @@ import {
   ChevronRight, 
   Calendar as CalendarIcon, 
   RotateCcw, 
-  Copy, 
-  Sparkles 
+  Copy 
 } from 'lucide-react';
 import { 
   formatWeekRange, 

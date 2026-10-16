@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Play, 
   Pause, 
@@ -7,7 +7,6 @@ import {
   VolumeX, 
   Plus, 
   Minus, 
-  Timer as TimerIcon, 
   CheckCircle, 
   Mic, 
   MicOff, 
@@ -17,8 +16,18 @@ import {
 import confetti from 'canvas-confetti';
 import { boxAudio } from '../../utils/boxAudio';
 
+// Normaliza cualquier variante de tipo de temporizador ('for_time', 'fortime', 'FOR TIME', 'EMOM', etc.)
+function normalizeMode(type = '') {
+  const clean = (type || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (clean.includes('time')) return 'fortime';
+  if (clean.includes('amrap')) return 'amrap';
+  if (clean.includes('emom') || clean.includes('interval')) return 'emom';
+  if (clean.includes('tabata')) return 'tabata';
+  return 'fortime';
+}
+
 export default function BoxTimer({ initialPreset = null }) {
-  const [mode, setMode] = useState(initialPreset?.type || 'fortime'); // 'fortime' | 'amrap' | 'emom' | 'tabata'
+  const [mode, setMode] = useState(() => normalizeMode(initialPreset?.type));
   const [isRunning, setIsRunning] = useState(false);
   const [isPrep, setIsPrep] = useState(false);
   const [prepDuration, setPrepDuration] = useState(10); // 10s, 5s o 3s
@@ -42,6 +51,56 @@ export default function BoxTimer({ initialPreset = null }) {
   const [completedRounds, setCompletedRounds] = useState(0);
 
   const timerRef = useRef(null);
+  const wakeLockRef = useRef(null);
+  const lastTimestampRef = useRef(null);
+
+  const resetTimer = useCallback(() => {
+    setIsRunning(false);
+    setIsPrep(false);
+    setPrepSeconds(prepDuration);
+    setSeconds(0);
+    setRemainingSeconds(targetMinutes * 60);
+    setTabataRound(1);
+    setIsTabataWork(true);
+    setTabataIntervalSeconds(20);
+    setCompletedRounds(0);
+  }, [prepDuration, targetMinutes]);
+
+  // Screen Wake Lock API: Mantiene la pantalla encendida en móviles mientras el WOD o temporizador está activo
+  useEffect(() => {
+    async function requestWakeLock() {
+      if (isRunning && typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
+        try {
+          wakeLockRef.current = await navigator.wakeLock.request('screen');
+        } catch {
+          // Permiso de wake lock no concedido o no soportado
+        }
+      } else if (!isRunning && wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release();
+        } catch {}
+        wakeLockRef.current = null;
+      }
+    }
+    requestWakeLock();
+
+    const handleVisibility = async () => {
+      if (document.visibilityState === 'visible' && isRunning && 'wakeLock' in navigator) {
+        try {
+          wakeLockRef.current = await navigator.wakeLock.request('screen');
+        } catch {}
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+    };
+  }, [isRunning]);
 
   // Sincronizar configuración con el motor de audio
   useEffect(() => {
@@ -53,37 +112,56 @@ export default function BoxTimer({ initialPreset = null }) {
   }, [voiceEnabled]);
 
   // Update if initialPreset changes
-  useEffect(() => {
+  const [prevPreset, setPrevPreset] = useState(initialPreset);
+  if (initialPreset !== prevPreset) {
+    setPrevPreset(initialPreset);
     if (initialPreset) {
-      setMode(initialPreset.type || 'fortime');
+      setMode(normalizeMode(initialPreset.type));
       if (initialPreset.minutes) {
         setTargetMinutes(initialPreset.minutes);
         setRemainingSeconds(initialPreset.minutes * 60);
       }
+    }
+  }
+
+  const prevPresetEffectRef = useRef(initialPreset);
+  useEffect(() => {
+    if (prevPresetEffectRef.current !== initialPreset) {
+      prevPresetEffectRef.current = initialPreset;
       resetTimer();
     }
-  }, [initialPreset]);
+  }, [initialPreset, resetTimer]);
 
-  // Main Timer Interval
+  // Main Timer Interval con compensación de drift temporal (timestamp delta)
   useEffect(() => {
     if (!isRunning) {
       clearInterval(timerRef.current);
       return;
     }
 
+    lastTimestampRef.current = Date.now();
+
     timerRef.current = setInterval(() => {
+      const now = Date.now();
+      const delta = now - lastTimestampRef.current;
+      
+      // Si ha pasado al menos 1 segundo completo
+      if (delta < 1000) return;
+      
+      const secondsPassed = Math.floor(delta / 1000);
+      lastTimestampRef.current += secondsPassed * 1000;
+
       // Cuenta atrás de preparación (10s, 5s, etc.)
       if (isPrep) {
         setPrepSeconds(prev => {
-          if (prev <= 1) {
+          const nextSec = prev - secondsPassed;
+          if (nextSec <= 0) {
             setIsPrep(false);
             // ¡BOCINAZO DE SALIDA!
             boxAudio.playBoxBuzzer(0.7);
             boxAudio.speak('¡Vamos!');
             return prepDuration;
           }
-
-          const nextSec = prev - 1;
 
           // Avisos sonoros y por voz en 3, 2, 1
           if (nextSec === 3) {
@@ -104,19 +182,19 @@ export default function BoxTimer({ initialPreset = null }) {
 
       // 1. FOR TIME (Cronómetro ascendente)
       if (mode === 'fortime') {
-        setSeconds(prev => prev + 1);
+        setSeconds(prev => prev + secondsPassed);
       } 
       // 2. AMRAP (Cuenta regresiva)
       else if (mode === 'amrap') {
         setRemainingSeconds(prev => {
-          if (prev <= 1) {
+          if (prev <= secondsPassed) {
             setIsRunning(false);
             boxAudio.playTimeCap();
             confetti({ particleCount: 90, spread: 70, colors: ['#ff2d78', '#a855f7'] });
             return 0;
           }
 
-          const nextSec = prev - 1;
+          const nextSec = prev - secondsPassed;
 
           // Aviso de último minuto
           if (nextSec === 60) {
@@ -234,18 +312,6 @@ export default function BoxTimer({ initialPreset = null }) {
     setIsRunning(false);
     setIsPrep(false);
     boxAudio.playCountdownBeep(550);
-  };
-
-  const resetTimer = () => {
-    setIsRunning(false);
-    setIsPrep(false);
-    setPrepSeconds(prepDuration);
-    setSeconds(0);
-    setRemainingSeconds(targetMinutes * 60);
-    setTabataRound(1);
-    setIsTabataWork(true);
-    setTabataIntervalSeconds(20);
-    setCompletedRounds(0);
   };
 
   const handleFinishForTime = () => {

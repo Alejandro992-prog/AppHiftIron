@@ -16,9 +16,10 @@ import BaseCalendar from '../../components/shared/BaseCalendar';
 import MuscleGroupSelector from '../../components/gym/MuscleGroupSelector';
 import RoutineCard from '../../components/athlete/RoutineCard';
 import PerformanceModal from '../../components/shared/PerformanceModal';
+import ProtectedZoneGate from '../../components/shared/ProtectedZoneGate';
 
 export default function TraditionalGymView() {
-  const { currentUser } = useAuth();
+  const { currentUser, canAccessZone } = useAuth();
   const { 
     setActiveZone, 
     selectedMuscleGroup, 
@@ -38,12 +39,21 @@ export default function TraditionalGymView() {
   const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
   const [selectedExerciseForModal, setSelectedExerciseForModal] = useState('');
 
-  // Map of days with assigned workouts in personal plan
-  const currentPlan = athletePlans[activeAthleteId] || {};
+  // Check access to traditional zone
+  const hasAccess = canAccessZone ? canAccessZone('traditional') : true;
+  if (!hasAccess) {
+    return <ProtectedZoneGate requiredZone="traditional" onReturnToDashboard={() => setActiveZone('dashboard')} />;
+  }
+
+  // Map of days with assigned workouts in personal plan (soporta tanto mapa de días directo como por id de alumno)
+  const currentPlan = (athletePlans && typeof athletePlans === 'object' && athletePlans[activeAthleteId])
+    ? athletePlans[activeAthleteId]
+    : (athletePlans || {});
+
   const workoutMapForCalendar = Object.keys(currentPlan).reduce((acc, day) => {
     const wId = currentPlan[day];
     if (wId) {
-      acc[day] = traditionalWorkouts.find(w => w.id === wId) || true;
+      acc[day] = traditionalWorkouts.find(w => w.id === wId) || null;
     }
     return acc;
   }, {});

@@ -7,24 +7,17 @@ import {
   UserPlus, 
   Plus, 
   Eye, 
-  Mail, 
   Calendar, 
   Copy, 
   Check, 
-  Flame, 
-  Dumbbell,
-  Activity,
-  AlertTriangle,
+  ShieldAlert, 
+  ChevronRight, 
+  ArrowLeft, 
+  Lock, 
+  Database,
   Moon,
-  Zap,
-  CheckCircle2,
-  ShieldAlert,
-  ChevronRight,
-  ArrowLeft,
-  Lock,
-  Settings,
-  Sparkles,
-  FileText
+  Activity,
+  Zap
 } from 'lucide-react';
 import { useWorkouts } from '../../context/WorkoutContext';
 import { useAuth } from '../../context/AuthContext';
@@ -32,15 +25,19 @@ import AthletePlanManager from './AthletePlanManager';
 import WordImporter from './WordImporter';
 import InviteAthleteModal from './InviteAthleteModal';
 import CreateRoutineModal from './CreateRoutineModal';
+import SupabaseSyncModal from './SupabaseSyncModal';
+import { RECOVERY_STATES, calculateThreeDayMovingAverage } from '../../utils/recoveryScore';
+import { formatLocalDate } from '../../utils/weekManager';
 
 export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView }) {
   const { 
-    workouts, 
     customLogoUrl, 
     updateCustomLogo, 
     setActiveZone, 
     readinessLogs,
-    setManagingAthleteId 
+    getAthleteReadinessHistory,
+    setManagingAthleteId,
+    isSupabaseConfigured
   } = useWorkouts();
   const { athletes } = useAuth();
 
@@ -49,20 +46,46 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
 
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isCreateRoutineModalOpen, setIsCreateRoutineModalOpen] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
-  const [athleteFilter, setAthleteFilter] = useState('all'); // for athletes section
+  const [readinessFilter, setReadinessFilter] = useState('all'); // 'all' | 'attention' | 'pain'
 
   const totalAthletes = athletes.length;
 
-  // Process today's readiness reports for all athletes
-  const todayDateStr = new Date().toISOString().split('T')[0];
+  // Process today's readiness reports for all athletes according to Iron Program
+  const todayDateStr = formatLocalDate(new Date());
   const athletesWithReadiness = athletes.map(ath => {
     const key = `${todayDateStr}_${ath.id}`;
-    const log = readinessLogs[key];
-    return { ...ath, readiness: log || null };
+    const log = readinessLogs[key] || null;
+    const history = getAthleteReadinessHistory ? getAthleteReadinessHistory(ath.id) : [];
+    const threeDayAvg = calculateThreeDayMovingAverage(history);
+
+    // Map state key
+    let stateKey = log?.finalState;
+    if (!stateKey && log) {
+      if (log.level === 'fatigue') stateKey = 'low';
+      else if (log.level === 'moderate') stateKey = 'adequate';
+      else stateKey = 'optimal';
+    }
+
+    const stateData = stateKey ? RECOVERY_STATES[stateKey] : null;
+    const isAttentionRequired = stateKey === 'limited' || stateKey === 'low' || Boolean(log?.hasPain);
+
+    return { 
+      ...ath, 
+      readiness: log,
+      stateKey,
+      stateData,
+      threeDayAvg,
+      historyCount: history.length,
+      isAttentionRequired
+    };
   });
 
-  const highFatigueAthletes = athletesWithReadiness.filter(a => a.readiness && a.readiness.level === 'fatigue');
+  // Atletas destacados en Naranja / Rojo o con Molestia (según especificación del PDF)
+  const highFatigueAthletes = athletesWithReadiness.filter(a => a.stateKey === 'low' || a.stateKey === 'limited');
+  const athletesWithPain = athletesWithReadiness.filter(a => a.readiness?.hasPain);
+  const athletesRequiringAttention = athletesWithReadiness.filter(a => a.isAttentionRequired);
   const loggedTodayCount = athletesWithReadiness.filter(a => a.readiness !== null).length;
 
   const handleCopyLink = (athlete) => {
@@ -75,6 +98,18 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.type)) {
+      alert('Por seguridad, solo se admiten imágenes en formato PNG, JPEG o WEBP.');
+      return;
+    }
+
+    const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      alert('La imagen no puede superar los 2 MB de tamaño.');
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -151,12 +186,15 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
           </button>
         </div>
 
-        {/* High Fatigue Alert Banner if any */}
-        {highFatigueAthletes.length > 0 && (
+        {/* High Fatigue / Alert Banner for Coach (destacados según Iron Program) */}
+        {athletesRequiringAttention.length > 0 && (
           <div 
-            onClick={() => setCurrentSection('readiness')}
+            onClick={() => {
+              setReadinessFilter('attention');
+              setCurrentSection('readiness');
+            }}
             style={{
-              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(20, 20, 32, 0.95) 100%)',
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(249, 115, 22, 0.15) 100%)',
               border: '1.5px solid #ef4444',
               borderRadius: 'var(--radius-lg)',
               padding: '12px 14px',
@@ -172,10 +210,10 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
               <ShieldAlert size={20} color="#ef4444" style={{ flexShrink: 0 }} />
               <div>
                 <span style={{ fontSize: '12px', fontWeight: '900', color: '#ef4444', display: 'block' }}>
-                  ⚠️ {highFatigueAthletes.length} Atleta en Fatiga Alta Hoy
+                  ⚠️ {athletesRequiringAttention.length} Atleta{athletesRequiringAttention.length > 1 ? 's' : ''} Requiere{athletesRequiringAttention.length > 1 ? 'n' : ''} Ajuste (Naranja / Rojo / Dolor)
                 </span>
                 <span style={{ fontSize: '11px', color: '#ffffff' }}>
-                  {highFatigueAthletes.map(a => a.name).join(', ')} reporta falta de descanso o dolor
+                  {athletesRequiringAttention.map(a => a.name).join(', ')}: Conviene ajustar volumen o adaptar cargas hoy según el Iron Program
                 </span>
               </div>
             </div>
@@ -294,12 +332,12 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <h3 style={{ fontSize: '14px', fontWeight: '800', color: '#ffffff', margin: 0 }}>
-                    Radar de Sueño & Recuperación
+                    Radar Iron Program (Recuperación)
                   </h3>
                   <Lock size={12} color="#22c55e" />
                 </div>
                 <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
-                  Informes privados de descanso, zonas con dolor y notas confidenciales
+                  Sistema diario de evaluación, pautas automáticas y alertas de dolor
                 </p>
               </div>
             </div>
@@ -308,12 +346,12 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
               <span style={{
                 fontSize: '10px',
                 fontWeight: '800',
-                color: highFatigueAthletes.length > 0 ? '#ef4444' : '#22c55e',
-                background: highFatigueAthletes.length > 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                color: athletesRequiringAttention.length > 0 ? '#ef4444' : '#22c55e',
+                background: athletesRequiringAttention.length > 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)',
                 padding: '2px 8px',
                 borderRadius: 'var(--radius-full)'
               }}>
-                {highFatigueAthletes.length > 0 ? `${highFatigueAthletes.length} en fatiga` : `${loggedTodayCount} hoy`}
+                {athletesRequiringAttention.length > 0 ? `${athletesRequiringAttention.length} requieren ajuste` : `${loggedTodayCount} hoy`}
               </span>
               <ChevronRight size={16} color="var(--text-muted)" />
             </div>
@@ -433,7 +471,7 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
             </div>
           </div>
 
-          {/* Card 5: Importador Word (.docx) */}
+          {/* Card 5: Importador PDF y Word */}
           <div
             onClick={() => setCurrentSection('importer')}
             style={{
@@ -467,10 +505,10 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
               </div>
               <div>
                 <h3 style={{ fontSize: '14px', fontWeight: '800', color: '#ffffff', margin: 0 }}>
-                  Importador desde Word (.docx)
+                  Importador de Rutinas (PDF &amp; Word)
                 </h3>
                 <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
-                  Cargar documentos de Word y convertirlos automáticamente en WODs
+                  Cargar documentos PDF (.pdf) o Word (.docx) y convertirlos automáticamente en WODs
                 </p>
               </div>
             </div>
@@ -484,7 +522,7 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
                 padding: '2px 8px',
                 borderRadius: 'var(--radius-full)'
               }}>
-                .docx
+                .pdf / .docx
               </span>
               <ChevronRight size={16} color="var(--text-muted)" />
             </div>
@@ -535,6 +573,65 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
             <ChevronRight size={16} color="var(--text-muted)" />
           </div>
 
+          {/* Card 7: Base de Datos Supabase (Cloud Sync) */}
+          <div
+            onClick={() => setIsSupabaseModalOpen(true)}
+            style={{
+              background: 'var(--bg-secondary)',
+              border: isSupabaseConfigured 
+                ? '1px solid rgba(62, 207, 142, 0.4)' 
+                : '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.borderColor = '#3ECF8E'}
+            onMouseLeave={(e) => e.currentTarget.style.borderColor = isSupabaseConfigured ? 'rgba(62, 207, 142, 0.4)' : 'var(--border-subtle)'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, rgba(62, 207, 142, 0.2) 0%, rgba(62, 207, 142, 0.05) 100%)',
+                border: '1px solid rgba(62, 207, 142, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#3ECF8E',
+                flexShrink: 0
+              }}>
+                <Database size={20} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '14px', fontWeight: '800', color: '#ffffff', margin: 0 }}>
+                  Base de Datos Cloud (Supabase)
+                </h3>
+                <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
+                  Estado en la nube, diagnóstico de conexión y sincronización completa
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{
+                fontSize: '10px',
+                fontWeight: '800',
+                color: isSupabaseConfigured ? '#3ECF8E' : '#f97316',
+                background: isSupabaseConfigured ? 'rgba(62, 207, 142, 0.15)' : 'rgba(249, 115, 22, 0.15)',
+                padding: '2px 8px',
+                borderRadius: 'var(--radius-full)'
+              }}>
+                {isSupabaseConfigured ? '🟢 Conectado' : '🟠 Modo Local'}
+              </span>
+              <ChevronRight size={16} color="var(--text-muted)" />
+            </div>
+          </div>
+
         </div>
 
         {/* Modals */}
@@ -546,6 +643,11 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
         <CreateRoutineModal
           isOpen={isCreateRoutineModalOpen}
           onClose={() => setIsCreateRoutineModalOpen(false)}
+        />
+
+        <SupabaseSyncModal
+          isOpen={isSupabaseModalOpen}
+          onClose={() => setIsSupabaseModalOpen(false)}
         />
       </div>
     );
@@ -757,215 +859,470 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
       )}
 
       {/* ===================================================================== */}
-      {/* 2. SECCIÓN: RADAR DE SUEÑO & RECUPERACIÓN (EXCLUSIVO Y PRIVADO) */}
+      {/* 2. SECCIÓN: RADAR IRON PROGRAM - SISTEMA DIARIO DE RECUPERACIÓN */}
       {/* ===================================================================== */}
       {currentSection === 'readiness' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           
           {/* Privacy Guarantee Header Banner */}
           <div style={{
-            background: 'rgba(34, 197, 94, 0.08)',
-            border: '1px solid rgba(34, 197, 94, 0.25)',
+            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.12) 0%, rgba(168, 85, 247, 0.1) 100%)',
+            border: '1px solid rgba(34, 197, 94, 0.3)',
             borderRadius: 'var(--radius-md)',
-            padding: '10px 14px',
+            padding: '12px 14px',
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
-            fontSize: '11.5px',
-            color: '#22c55e'
+            justifyContent: 'space-between',
+            gap: '10px'
           }}>
-            <Lock size={18} style={{ flexShrink: 0 }} />
-            <span>
-              <strong>Área Privada del Coach:</strong> Los informes de descanso, horas de sueño y notas que ves aquí son 100% confidenciales y ningún atleta puede ver los datos de los demás.
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Lock size={18} color="#22c55e" style={{ flexShrink: 0 }} />
+              <div>
+                <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff', display: 'block' }}>
+                  Área Exclusiva y Confidencial del Head Coach (Iron Program)
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Evaluaciones diarias según PRS (Laurent et al. 2011), 5 variables de recuperación y alertas independientes de dolor.
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              fontSize: '10.5px',
+              fontWeight: '800',
+              padding: '4px 8px',
+              borderRadius: 'var(--radius-full)',
+              background: 'rgba(34, 197, 94, 0.2)',
+              color: '#22c55e',
+              border: '1px solid #22c55e',
+              whiteSpace: 'nowrap'
+            }}>
+              RGPD Art. 9 Válido
+            </div>
+          </div>
+
+          {/* 4 Official States Metric Bar (Iron Program) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
+            {/* Óptimo */}
+            <div style={{ 
+              background: 'var(--bg-secondary)', 
+              border: '1px solid rgba(34, 197, 94, 0.3)', 
+              borderRadius: 'var(--radius-md)', 
+              padding: '10px', 
+              textAlign: 'center' 
+            }}>
+              <span style={{ fontSize: '10px', fontWeight: '900', color: '#22c55e', textTransform: 'uppercase' }}>
+                🟢 ÓPTIMO
+              </span>
+              <div style={{ fontSize: '18px', fontWeight: '900', color: '#ffffff', marginTop: '2px' }}>
+                {athletesWithReadiness.filter(a => a.stateKey === 'optimal').length}
+              </div>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>8,0 - 10</span>
+            </div>
+
+            {/* Adecuado */}
+            <div style={{ 
+              background: 'var(--bg-secondary)', 
+              border: '1px solid rgba(234, 179, 8, 0.3)', 
+              borderRadius: 'var(--radius-md)', 
+              padding: '10px', 
+              textAlign: 'center' 
+            }}>
+              <span style={{ fontSize: '10px', fontWeight: '900', color: '#eab308', textTransform: 'uppercase' }}>
+                🟡 ADECUADO
+              </span>
+              <div style={{ fontSize: '18px', fontWeight: '900', color: '#ffffff', marginTop: '2px' }}>
+                {athletesWithReadiness.filter(a => a.stateKey === 'adequate').length}
+              </div>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>6,5 - 7,9</span>
+            </div>
+
+            {/* Recuperación Limitada */}
+            <div style={{ 
+              background: 'rgba(249, 115, 22, 0.08)', 
+              border: '1.5px solid rgba(249, 115, 22, 0.45)', 
+              borderRadius: 'var(--radius-md)', 
+              padding: '10px', 
+              textAlign: 'center' 
+            }}>
+              <span style={{ fontSize: '10px', fontWeight: '900', color: '#f97316', textTransform: 'uppercase' }}>
+                🟠 LIMITADA
+              </span>
+              <div style={{ fontSize: '18px', fontWeight: '900', color: '#f97316', marginTop: '2px' }}>
+                {athletesWithReadiness.filter(a => a.stateKey === 'limited').length}
+              </div>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>5,0 - 6,4</span>
+            </div>
+
+            {/* Recuperación Baja */}
+            <div style={{ 
+              background: 'rgba(239, 68, 68, 0.08)', 
+              border: '1.5px solid rgba(239, 68, 68, 0.45)', 
+              borderRadius: 'var(--radius-md)', 
+              padding: '10px', 
+              textAlign: 'center' 
+            }}>
+              <span style={{ fontSize: '10px', fontWeight: '900', color: '#ef4444', textTransform: 'uppercase' }}>
+                🔴 BAJA
+              </span>
+              <div style={{ fontSize: '18px', fontWeight: '900', color: '#ef4444', marginTop: '2px' }}>
+                {athletesWithReadiness.filter(a => a.stateKey === 'low').length}
+              </div>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>&lt; 5,0</span>
+            </div>
+          </div>
+
+          {/* Filter Pills */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              Filtrar vista:
             </span>
+
+            <button
+              type="button"
+              onClick={() => setReadinessFilter('all')}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 'var(--radius-full)',
+                fontSize: '11px',
+                fontWeight: '800',
+                background: readinessFilter === 'all' ? 'var(--brand-pink)' : 'var(--bg-secondary)',
+                color: readinessFilter === 'all' ? '#ffffff' : 'var(--text-secondary)',
+                border: '1px solid var(--border-subtle)',
+                cursor: 'pointer'
+              }}
+            >
+              Todos ({athletesWithReadiness.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setReadinessFilter('attention')}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 'var(--radius-full)',
+                fontSize: '11px',
+                fontWeight: '800',
+                background: readinessFilter === 'attention' ? '#f97316' : 'var(--bg-secondary)',
+                color: readinessFilter === 'attention' ? '#ffffff' : '#f97316',
+                border: readinessFilter === 'attention' ? 'none' : '1px solid rgba(249, 115, 22, 0.4)',
+                cursor: 'pointer'
+              }}
+            >
+              ⚠️ Destacados: Naranja / Rojo ({highFatigueAthletes.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setReadinessFilter('pain')}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 'var(--radius-full)',
+                fontSize: '11px',
+                fontWeight: '800',
+                background: readinessFilter === 'pain' ? '#ef4444' : 'var(--bg-secondary)',
+                color: readinessFilter === 'pain' ? '#ffffff' : '#ef4444',
+                border: readinessFilter === 'pain' ? 'none' : '1px solid rgba(239, 68, 68, 0.4)',
+                cursor: 'pointer'
+              }}
+            >
+              🚨 Con Molestia / Dolor ({athletesWithPain.length})
+            </button>
           </div>
 
-          {/* Quick Metrics Bar */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-            <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '10px', textAlign: 'center' }}>
-              <span style={{ fontSize: '10px', fontWeight: '800', color: '#22c55e', textTransform: 'uppercase' }}>Óptimos</span>
-              <div style={{ fontSize: '20px', fontWeight: '900', color: '#ffffff', marginTop: '2px' }}>
-                {athletesWithReadiness.filter(a => a.readiness?.level === 'optimal').length}
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '10px', textAlign: 'center' }}>
-              <span style={{ fontSize: '10px', fontWeight: '800', color: '#eab308', textTransform: 'uppercase' }}>Moderados</span>
-              <div style={{ fontSize: '20px', fontWeight: '900', color: '#ffffff', marginTop: '2px' }}>
-                {athletesWithReadiness.filter(a => a.readiness?.level === 'moderate').length}
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '10px', textAlign: 'center' }}>
-              <span style={{ fontSize: '10px', fontWeight: '800', color: '#ef4444', textTransform: 'uppercase' }}>Fatiga Alta</span>
-              <div style={{ fontSize: '20px', fontWeight: '900', color: '#ef4444', marginTop: '2px' }}>
-                {highFatigueAthletes.length}
-              </div>
-            </div>
-          </div>
-
-          {/* Athletes Detailed Recovery Cards */}
+          {/* Athletes Detailed Recovery Cards (Destacando en Naranja/Rojo primero) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {athletesWithReadiness.map(athlete => {
-              const log = athlete.readiness;
-              const isFatigue = log?.level === 'fatigue';
-              const isModerate = log?.level === 'moderate';
-              const isOptimal = log?.level === 'optimal';
-              const statusColor = isFatigue ? '#ef4444' : isModerate ? '#eab308' : isOptimal ? '#22c55e' : 'var(--text-muted)';
+            {athletesWithReadiness
+              .filter(athlete => {
+                if (readinessFilter === 'attention') return athlete.stateKey === 'limited' || athlete.stateKey === 'low' || athlete.readiness?.hasPain;
+                if (readinessFilter === 'pain') return Boolean(athlete.readiness?.hasPain);
+                return true;
+              })
+              // Ordenar: primero los atletas con atención requerida (naranja / rojo / dolor)
+              .sort((a, b) => {
+                if (a.isAttentionRequired && !b.isAttentionRequired) return -1;
+                if (!a.isAttentionRequired && b.isAttentionRequired) return 1;
+                return (b.readiness ? 1 : 0) - (a.readiness ? 1 : 0);
+              })
+              .map(athlete => {
+                const log = athlete.readiness;
+                const stateData = athlete.stateData || RECOVERY_STATES.adequate;
+                const statusColor = stateData.color;
+                const isAttention = athlete.isAttentionRequired;
 
-              return (
-                <div
-                  key={athlete.id}
-                  style={{
-                    background: isFatigue ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--bg-secondary) 100%)' : 'var(--bg-secondary)',
-                    borderRadius: 'var(--radius-lg)',
-                    border: isFatigue ? '1.5px solid rgba(239, 68, 68, 0.5)' : '1px solid var(--border-subtle)',
-                    padding: '14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px'
-                  }}
-                >
-                  {/* Top: Athlete & Score */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{
-                        width: '38px',
-                        height: '38px',
-                        borderRadius: '50%',
-                        background: `${statusColor}22`,
-                        border: `1.5px solid ${statusColor}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: statusColor,
-                        fontWeight: '900',
-                        fontSize: '13px'
-                      }}>
-                        {athlete.avatar || 'AL'}
-                      </div>
+                const scoreFormatted = log?.scoreDisplay || 
+                  (log?.score !== undefined 
+                    ? (log.score > 10 ? (log.score / 10).toFixed(1) : log.score.toFixed(1)).replace('.', ',')
+                    : null);
 
-                      <div>
-                        <h4 style={{ fontSize: '14px', fontWeight: '900', color: '#ffffff', margin: 0 }}>
-                          {athlete.name}
-                        </h4>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {athlete.email}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Readiness Pill */}
-                    {log ? (
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '3px' }}>
-                          <span style={{ fontSize: '18px', fontWeight: '900', color: statusColor, fontFamily: 'monospace' }}>
-                            {log.score}%
-                          </span>
-                          <span style={{ fontSize: '10px', fontWeight: '800', color: statusColor }}>
-                            {isFatigue ? 'FATIGA' : isModerate ? 'MODERADO' : 'ÓPTIMO'}
-                          </span>
-                        </div>
-                        <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
-                          Hoy, {log.loggedAt || '08:00'}
-                        </span>
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                        Sin check-in hoy
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Private Details Breakdown */}
-                  {log && (
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(3, 1fr)',
-                      gap: '6px',
-                      background: 'rgba(0, 0, 0, 0.3)',
-                      padding: '10px',
-                      borderRadius: 'var(--radius-sm)'
-                    }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text-muted)', fontSize: '10.5px' }}>
-                          <Moon size={11} color="var(--brand-lilac-light)" />
-                          <span>Sueño:</span>
-                        </div>
-                        <strong style={{ color: '#ffffff', fontSize: '12px', display: 'block', marginTop: '2px' }}>
-                          {log.sleepHours || `${log.sleep}/5`}
-                        </strong>
-                        <span style={{ fontSize: '9.5px', color: 'var(--text-secondary)' }}>
-                          {log.sleepQualityText || 'Descanso normal'}
-                        </span>
-                      </div>
-
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text-muted)', fontSize: '10.5px' }}>
-                          <Activity size={11} color="#38bdf8" />
-                          <span>Dolor:</span>
-                        </div>
-                        <strong style={{ color: '#ffffff', fontSize: '12px', display: 'block', marginTop: '2px' }}>
-                          {log.soreness}/5
-                        </strong>
-                        <span style={{ fontSize: '9.5px', color: '#38bdf8' }}>
-                          {log.sorenessAreas?.join(', ') || 'Sin molestias'}
-                        </span>
-                      </div>
-
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text-muted)', fontSize: '10.5px' }}>
-                          <Zap size={11} color="#eab308" />
-                          <span>Energía:</span>
-                        </div>
-                        <strong style={{ color: '#ffffff', fontSize: '12px', display: 'block', marginTop: '2px' }}>
-                          {log.energy}/5
-                        </strong>
-                        <span style={{ fontSize: '9.5px', color: 'var(--text-secondary)' }}>
-                          {log.energyText || 'Energía media'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Athlete Note to Coach */}
-                  {log?.notes && (
-                    <div style={{
-                      fontSize: '11px',
-                      color: isFatigue ? '#fca5a5' : 'var(--text-secondary)',
-                      background: isFatigue ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.03)',
-                      padding: '8px 10px',
-                      borderRadius: 'var(--radius-xs)',
-                      borderLeft: `2.5px solid ${statusColor}`,
-                      fontStyle: 'italic'
-                    }}>
-                      💬 "{log.notes}"
-                    </div>
-                  )}
-
-                  {/* Fatigue Action */}
-                  {isFatigue && (
-                    <div style={{
+                return (
+                  <div
+                    key={athlete.id}
+                    style={{
+                      background: isAttention 
+                        ? (athlete.stateKey === 'low' 
+                            ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, var(--bg-secondary) 100%)' 
+                            : 'linear-gradient(135deg, rgba(249, 115, 22, 0.12) 0%, var(--bg-secondary) 100%)')
+                        : 'var(--bg-secondary)',
+                      borderRadius: 'var(--radius-lg)',
+                      border: isAttention ? `1.5px solid ${statusColor}` : '1px solid var(--border-subtle)',
+                      padding: '14px',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      background: 'rgba(239, 68, 68, 0.18)',
-                      padding: '6px 10px',
-                      borderRadius: 'var(--radius-xs)',
-                      fontSize: '11px',
-                      color: '#ffffff'
-                    }}>
-                      <span>⚠️ <strong>Ajuste Coach:</strong> Reducir -15% peso o adaptar volumen hoy</span>
-                      {log.deloadMode && (
-                        <span style={{ background: '#ef4444', padding: '1px 6px', borderRadius: 'var(--radius-full)', fontSize: '9px', fontWeight: '800' }}>
-                          DESCARGA CONFIRMADA
+                      flexDirection: 'column',
+                      gap: '10px',
+                      boxShadow: isAttention ? `0 4px 16px ${statusColor}22` : 'none'
+                    }}
+                  >
+                    {/* Top: Athlete Avatar, Name, and Recovery Score */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '50%',
+                          background: `${statusColor}25`,
+                          border: `1.5px solid ${statusColor}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: statusColor,
+                          fontWeight: '900',
+                          fontSize: '13px'
+                        }}>
+                          {athlete.avatar || 'AL'}
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <h4 style={{ fontSize: '14px', fontWeight: '900', color: '#ffffff', margin: 0 }}>
+                              {athlete.name}
+                            </h4>
+                            {isAttention && (
+                              <span style={{
+                                fontSize: '9px',
+                                fontWeight: '900',
+                                background: statusColor,
+                                color: '#000000',
+                                padding: '1px 6px',
+                                borderRadius: 'var(--radius-full)'
+                              }}>
+                                DESTACADO HOY
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            {athlete.email}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Score & State Badge */}
+                      {log ? (
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                            <span style={{ fontSize: '13px' }}>{stateData.iconEmoji}</span>
+                            <span style={{ fontSize: '11px', fontWeight: '900', color: statusColor, textTransform: 'uppercase' }}>
+                              {stateData.name}
+                            </span>
+                            <span style={{ fontSize: '18px', fontWeight: '900', color: '#ffffff', fontFamily: 'monospace' }}>
+                              {scoreFormatted} / 10
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', fontSize: '9.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            <span>Hoy, {log.loggedAt || '08:00'}</span>
+                            {athlete.threeDayAvg && (
+                              <span>• Media 3 días: <strong>{athlete.threeDayAvg.toFixed(1).replace('.', ',')}/10</strong></span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          Sin evaluación completada hoy
                         </span>
                       )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+
+                    {/* Headline and Guidelines */}
+                    {log && (
+                      <div style={{
+                        background: 'rgba(0, 0, 0, 0.35)',
+                        borderLeft: `3px solid ${statusColor}`,
+                        borderRadius: 'var(--radius-xs)',
+                        padding: '8px 12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff' }}>
+                            {log.headline || stateData.headline}
+                          </span>
+                          <span style={{ fontSize: '10px', color: statusColor, fontWeight: '800' }}>
+                            Reducción sugerida: {stateData.volumeReduction}
+                          </span>
+                        </div>
+
+                        {/* Guidelines points */}
+                        <ul style={{ margin: 0, paddingLeft: '14px', fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>
+                          {(log.guidelines || stateData.guidelines)?.map((g, idx) => (
+                            <li key={idx}>{g}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* 5 Variables Breakdown (Sueño, Fatiga, Energía, Estrés, PRS) */}
+                    {log && (
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
+                        gap: '6px',
+                        background: 'rgba(0, 0, 0, 0.25)',
+                        padding: '8px 10px',
+                        borderRadius: 'var(--radius-sm)'
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <Moon size={11} color="var(--brand-lilac-light)" />
+                            <span>Sueño:</span>
+                          </div>
+                          <strong style={{ color: '#ffffff', fontSize: '11.5px' }}>
+                            {log.sleep}/5
+                          </strong>
+                          <span style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'block' }}>
+                            {log.sleepText || 'Descanso'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <Activity size={11} color="#38bdf8" />
+                            <span>Fatiga musc.:</span>
+                          </div>
+                          <strong style={{ color: '#ffffff', fontSize: '11.5px' }}>
+                            {log.fatigue || log.soreness}/5
+                          </strong>
+                          <span style={{ fontSize: '9px', color: '#38bdf8', display: 'block' }}>
+                            {log.fatigueText || 'Muscular'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <Zap size={11} color="#eab308" />
+                            <span>Energía:</span>
+                          </div>
+                          <strong style={{ color: '#ffffff', fontSize: '11.5px' }}>
+                            {log.energy}/5
+                          </strong>
+                          <span style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'block' }}>
+                            {log.energyText || 'Energía'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <span>🧠</span>
+                            <span>Estrés:</span>
+                          </div>
+                          <strong style={{ color: '#ffffff', fontSize: '11.5px' }}>
+                            {log.stress || 3}/5
+                          </strong>
+                          <span style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'block' }}>
+                            {log.stressText || 'Estrés'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <span>🎯</span>
+                            <span>PRS (Laurent):</span>
+                          </div>
+                          <strong style={{ color: '#22c55e', fontSize: '11.5px' }}>
+                            {log.prs ?? 8}/10
+                          </strong>
+                          <span style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'block' }}>
+                            Recup. general
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Independent Pain / Molestia Alert */}
+                    {log?.hasPain && (
+                      <div style={{
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1.5px solid #ef4444',
+                        borderRadius: 'var(--radius-xs)',
+                        padding: '8px 10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '3px',
+                        fontSize: '11px',
+                        color: '#fca5a5'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '800', color: '#ef4444' }}>
+                          <ShieldAlert size={14} />
+                          <span>¡ALERTA DE MOLESTIA / DOLOR ACTIVA!</span>
+                        </div>
+                        <div>
+                          <strong>Zonas reportadas:</strong> {log.painAreas?.join(', ') || log.sorenessAreas?.join(', ') || 'No especificada'}
+                        </div>
+                        {log.painDescription && (
+                          <div>
+                            <strong>Detalle del atleta:</strong> "{log.painDescription}"
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Downgrade rule notice */}
+                    {log?.downgraded && (
+                      <div style={{
+                        background: 'rgba(249, 115, 22, 0.12)',
+                        border: '1px solid #f97316',
+                        borderRadius: 'var(--radius-xs)',
+                        padding: '6px 10px',
+                        fontSize: '10.5px',
+                        color: '#fdba74'
+                      }}>
+                        ⚠️ <strong>Regla Iron Program aplicada:</strong> Dos o más variables en 1/5 han degradado automáticamente un estadio de entrenamiento para proteger las articulaciones del atleta.
+                      </div>
+                    )}
+
+                    {/* Athlete Note to Coach */}
+                    {log?.notes && (
+                      <div style={{
+                        fontSize: '11px',
+                        color: 'var(--text-secondary)',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        padding: '6px 10px',
+                        borderRadius: 'var(--radius-xs)',
+                        fontStyle: 'italic'
+                      }}>
+                        💬 Nota del alumno: "{log.notes}"
+                      </div>
+                    )}
+
+                    {/* Action pill if deload is active */}
+                    {log?.deloadMode && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: 'rgba(239, 68, 68, 0.18)',
+                        padding: '6px 10px',
+                        borderRadius: 'var(--radius-xs)',
+                        fontSize: '11px',
+                        color: '#ffffff'
+                      }}>
+                        <span>⚠️ <strong>Modo Descarga Activo:</strong> El sistema aplica -15% en las barras a este atleta hoy.</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}
@@ -1055,6 +1412,11 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
       <CreateRoutineModal
         isOpen={isCreateRoutineModalOpen}
         onClose={() => setIsCreateRoutineModalOpen(false)}
+      />
+
+      <SupabaseSyncModal
+        isOpen={isSupabaseModalOpen}
+        onClose={() => setIsSupabaseModalOpen(false)}
       />
     </div>
   );

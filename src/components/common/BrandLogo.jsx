@@ -5,7 +5,7 @@ export default function BrandLogo({
   layout = 'horizontal', 
   showTagline = true, 
   customLogoUrl = null,
-  variant = 'badge' // 'badge' (image) | 'vector'
+  _variant = 'badge' // 'badge' (image) | 'vector'
 }) {
   const [imageError, setImageError] = useState(false);
 

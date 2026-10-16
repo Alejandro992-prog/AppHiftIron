@@ -1,18 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Flame, 
   ArrowLeft, 
-  Timer, 
   Award, 
-  Layers, 
   Play, 
-  CheckCircle2, 
   Clock, 
-  Calendar as CalendarIcon,
-  TableProperties,
-  Zap,
-  ChevronRight,
-  Sparkles
+  ChevronRight 
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
@@ -20,10 +13,12 @@ import BaseCalendar from '../../components/shared/BaseCalendar';
 import ProtectedZoneGate from '../../components/shared/ProtectedZoneGate';
 import PerformanceModal from '../../components/shared/PerformanceModal';
 import RoutineCard from '../../components/athlete/RoutineCard';
+import CompetitorReadinessGate from '../../components/competitors/CompetitorReadinessGate';
+import CompetitorAdaptationCard from '../../components/competitors/CompetitorAdaptationCard';
 import { shiftWeekKey } from '../../utils/weekManager';
 
-export default function CompetitorsView({ onOpenTimerWithPreset }) {
-  const { currentUser, canAccessZone } = useAuth();
+export default function CompetitorsView({ onOpenTimerWithPreset: _onOpenTimerWithPreset }) {
+  const { currentUser, canAccessZone, isAdmin } = useAuth();
   const { 
     setActiveZone, 
     workouts,
@@ -36,27 +31,58 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
     setActiveWorkoutDetail,
     boxWeeklySchedule,
     assignBoxWorkoutToDay,
-    copyBoxWeekPlan
+    copyBoxWeekPlan,
+    getTodayReadiness,
+    resetTodayReadiness,
+    openReadinessModal
   } = useWorkouts();
 
   // The 3 required user tabs: 'daily_session' | 'calendar' | 'table_workouts'
   const [activeMenuTab, setActiveMenuTab] = useState('daily_session');
   const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
   const [selectedExerciseForModal, setSelectedExerciseForModal] = useState('');
+  const [coachBypass, setCoachBypass] = useState(false);
+  const autoOpenedRef = useRef(false);
+
+  // Daily Fatigue / Readiness Check
+  const todayEntry = getTodayReadiness(currentUser?.id);
+  const isCoachOrAdmin = isAdmin || currentUser?.role === 'admin' || currentUser?.role === 'coach';
+  const hasAccess = canAccessZone('competitors');
+  const isWorkoutUnlocked = Boolean(todayEntry) || (isCoachOrAdmin && coachBypass);
+
+  // Auto-open modal on first access if athlete has not completed today's test
+  useEffect(() => {
+    if (hasAccess && !todayEntry && !isCoachOrAdmin && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      openReadinessModal();
+    }
+  }, [hasAccess, todayEntry, isCoachOrAdmin, openReadinessModal]);
 
   // Access check
-  if (!canAccessZone('competitors')) {
+  if (!hasAccess) {
     return <ProtectedZoneGate requiredZone="competitors" onReturnToDashboard={() => setActiveZone('dashboard')} />;
   }
 
-  // Map of days with competitor workouts for this week
+  // If workout is locked due to pending mandatory fatigue test
+  if (!isWorkoutUnlocked) {
+    return (
+      <CompetitorReadinessGate
+        onOpenTest={openReadinessModal}
+        onReturnToDashboard={() => setActiveZone('dashboard')}
+        isCoachOrAdmin={isCoachOrAdmin}
+        onCoachBypass={() => setCoachBypass(true)}
+      />
+    );
+  }
+
+  // Map of days with competitor workouts for this week (sin falso positivo de || true)
   const competitorWorkoutMap = {};
   ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].forEach(d => {
     const scheduledId = boxWeeklySchedule[selectedWeek]?.[d];
     if (scheduledId) {
-      competitorWorkoutMap[d] = workouts.find(w => w.id === scheduledId) || true;
+      competitorWorkoutMap[d] = workouts.find(w => w.id === scheduledId) || null;
     } else {
-      competitorWorkoutMap[d] = competitorWorkouts.find(w => w.dayId === d) || true;
+      competitorWorkoutMap[d] = competitorWorkouts.find(w => w.dayId === d) || null;
     }
   });
 
@@ -71,143 +97,142 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      {/* Top Header & Breadcrumb */}
+      {/* Clean Top Header Bar */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 2px'
+        padding: '2px 0'
       }}>
         <button
           onClick={() => setActiveZone('dashboard')}
           style={{
-            display: 'flex',
+            display: 'inline-flex',
             alignItems: 'center',
-            gap: '6px',
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-full)',
-            padding: '6px 12px',
-            fontSize: '11.5px',
-            fontWeight: '700',
+            gap: '5px',
+            background: 'none',
+            border: 'none',
             color: 'var(--text-secondary)',
-            cursor: 'pointer'
+            fontSize: '12px',
+            fontWeight: '700',
+            cursor: 'pointer',
+            padding: 0
           }}
         >
-          <ArrowLeft size={13} />
-          <span>Cambiar de Zona</span>
+          <ArrowLeft size={14} />
+          <span>Inicio</span>
         </button>
 
         <span style={{
-          fontSize: '11px',
-          fontWeight: '800',
+          fontSize: '11.5px',
+          fontWeight: '900',
           color: 'var(--brand-pink)',
-          background: 'rgba(255, 45, 120, 0.12)',
-          border: '1px solid rgba(255, 45, 120, 0.25)',
-          padding: '3px 10px',
-          borderRadius: 'var(--radius-full)',
           display: 'flex',
           alignItems: 'center',
-          gap: '5px'
+          gap: '4px'
         }}>
-          <Flame size={12} color="var(--brand-pink)" />
-          <span>ZONA COMPETIDOR</span>
+          <Flame size={13} />
+          <span>Competidores</span>
         </span>
       </div>
 
-      {/* 3 Main Required Menu Tabs */}
+      {/* Simplified Segmented Tabs */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 1fr 1fr',
         gap: '4px',
         background: 'var(--bg-secondary)',
         padding: '3px',
-        borderRadius: 'var(--radius-full)',
+        borderRadius: 'var(--radius-md)',
         border: '1px solid var(--border-subtle)'
       }}>
         <button
           onClick={() => setActiveMenuTab('daily_session')}
           style={{
-            padding: '9px 6px',
-            borderRadius: 'var(--radius-full)',
-            fontSize: '11px',
+            padding: '8px 4px',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: '12px',
             fontWeight: '800',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '5px',
-            background: activeMenuTab === 'daily_session' ? 'linear-gradient(135deg, #ff2d78 0%, #a855f7 100%)' : 'transparent',
+            background: activeMenuTab === 'daily_session' ? 'var(--brand-gradient)' : 'transparent',
             color: activeMenuTab === 'daily_session' ? '#ffffff' : 'var(--text-secondary)',
             border: 'none',
             cursor: 'pointer',
-            transition: 'all var(--transition-fast)'
+            transition: 'all 0.15s ease'
           }}
         >
-          <Zap size={13} />
-          <span>Sesión Diaria</span>
+          <span>Sesión Hoy</span>
         </button>
 
         <button
           onClick={() => setActiveMenuTab('calendar')}
           style={{
-            padding: '9px 6px',
-            borderRadius: 'var(--radius-full)',
-            fontSize: '11px',
+            padding: '8px 4px',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: '12px',
             fontWeight: '800',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '5px',
-            background: activeMenuTab === 'calendar' ? 'linear-gradient(135deg, #ff2d78 0%, #a855f7 100%)' : 'transparent',
+            background: activeMenuTab === 'calendar' ? 'var(--brand-gradient)' : 'transparent',
             color: activeMenuTab === 'calendar' ? '#ffffff' : 'var(--text-secondary)',
             border: 'none',
             cursor: 'pointer',
-            transition: 'all var(--transition-fast)'
+            transition: 'all 0.15s ease'
           }}
         >
-          <CalendarIcon size={13} />
           <span>Calendario</span>
         </button>
 
         <button
           onClick={() => setActiveMenuTab('table_workouts')}
           style={{
-            padding: '9px 6px',
-            borderRadius: 'var(--radius-full)',
-            fontSize: '11px',
+            padding: '8px 4px',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: '12px',
             fontWeight: '800',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '5px',
-            background: activeMenuTab === 'table_workouts' ? 'linear-gradient(135deg, #ff2d78 0%, #a855f7 100%)' : 'transparent',
+            background: activeMenuTab === 'table_workouts' ? 'var(--brand-gradient)' : 'transparent',
             color: activeMenuTab === 'table_workouts' ? '#ffffff' : 'var(--text-secondary)',
             border: 'none',
             cursor: 'pointer',
-            transition: 'all var(--transition-fast)'
+            transition: 'all 0.15s ease'
           }}
         >
-          <TableProperties size={13} />
-          <span>Tabla Entrenos</span>
+          <span>Biblioteca</span>
         </button>
       </div>
 
-      {/* 1. SESIÓN DIARIA */}
+      {/* 1. SESIÓN HOY */}
       {activeMenuTab === 'daily_session' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Tarjeta Oficial de Adaptación según puntuación del test */}
+          {todayEntry && (
+            <CompetitorAdaptationCard 
+              todayEntry={todayEntry}
+              onEditTest={openReadinessModal}
+              onResetTest={() => resetTodayReadiness(currentUser?.id)}
+              variant="card"
+            />
+          )}
+
           {todaysWorkout ? (
             <div style={{
               background: 'var(--bg-secondary)',
               border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-xl)',
-              padding: '18px 16px',
+              padding: '16px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '14px',
+              gap: '12px',
               boxShadow: 'var(--shadow-md)'
             }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
                   <span style={{
                     fontSize: '10px',
                     fontWeight: '800',
@@ -224,9 +249,22 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
                     <Clock size={12} />
                     {todaysWorkout.duration}
                   </span>
+
+                  {todayEntry && todayEntry.volumeReduction !== '0%' && (
+                    <span style={{
+                      fontSize: '10px',
+                      fontWeight: '800',
+                      color: '#fb923c',
+                      background: 'rgba(249, 115, 22, 0.18)',
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-full)'
+                    }}>
+                      Ajuste sugerido: {todayEntry.volumeReduction}
+                    </span>
+                  )}
                 </div>
 
-                <h2 style={{ fontSize: '18px', fontWeight: '900', color: '#ffffff', lineHeight: 1.3 }}>
+                <h2 style={{ fontSize: '18px', fontWeight: '900', color: '#ffffff', lineHeight: 1.3, margin: 0 }}>
                   {todaysWorkout.title}
                 </h2>
                 <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
@@ -234,15 +272,18 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
                 </p>
               </div>
 
-              {/* Sections summary */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Sections list */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                  Bloques a Realizar Hoy ({todaysWorkout.sections.length})
+                  Bloques a Realizar ({todaysWorkout.sections.length})
                 </span>
 
                 {todaysWorkout.sections.map((sec, idx) => (
                   <div
                     key={idx}
+                    onClick={() => setActiveWorkoutDetail({ ...todaysWorkout, initialSectionIndex: idx })}
+                    role="button"
+                    tabIndex={0}
                     style={{
                       background: 'var(--bg-surface)',
                       border: '1px solid var(--border-subtle)',
@@ -250,7 +291,10 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
                       padding: '10px 12px',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between'
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      transition: 'all var(--transition-fast)'
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -273,9 +317,12 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
                       </span>
                     </div>
 
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      {sec.exercises.length} ejercicios
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {sec.exercises.length} ejercicios
+                      </span>
+                      <ChevronRight size={14} color="var(--brand-pink)" />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -328,6 +375,14 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
       {/* 2. CALENDARIO PROGRAMADO */}
       {activeMenuTab === 'calendar' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {todayEntry && (
+            <CompetitorAdaptationCard 
+              todayEntry={todayEntry}
+              onEditTest={openReadinessModal}
+              variant="compact"
+            />
+          )}
+
           <BaseCalendar 
             selectedDay={selectedDay}
             onSelectDay={setSelectedDay}
@@ -407,6 +462,14 @@ export default function CompetitorsView({ onOpenTimerWithPreset }) {
       {/* 3. TABLA DE ENTRENAMIENTOS (BIBLIOTECA COMPLETA) */}
       {activeMenuTab === 'table_workouts' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {todayEntry && (
+            <CompetitorAdaptationCard 
+              todayEntry={todayEntry}
+              onEditTest={openReadinessModal}
+              variant="compact"
+            />
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
             <span style={{ fontSize: '11.5px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Biblioteca de Rutinas Competidores ({competitorWorkouts.length})

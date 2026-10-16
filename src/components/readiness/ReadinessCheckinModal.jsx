@@ -1,21 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   X, 
   Moon, 
   Activity, 
   Zap, 
+  Brain, 
+  Gauge, 
   AlertTriangle, 
-  CheckCircle2, 
   ShieldCheck, 
   Lock, 
   ShieldAlert, 
-  MessageSquare,
-  Clock,
-  Info,
-  FileText
+  Sparkles, 
+  ArrowDown 
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
+import { 
+  calculateIronRecoveryScore, 
+  VARIABLE_INTERPRETATIONS 
+} from '../../utils/recoveryScore';
 
 export default function ReadinessCheckinModal({ isOpen, onClose }) {
   const { currentUser, getUserConsents, updateConsent } = useAuth();
@@ -25,149 +28,99 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
   const userConsents = getUserConsents(currentUser?.id);
   const [healthConsentGiven, setHealthConsentGiven] = useState(!!userConsents.health_readiness);
   const [showLegalDetails, setShowLegalDetails] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
-  // Current values or defaults
+  // Today entry if previously filled
   const todayEntry = getTodayReadiness(currentUser?.id);
 
-  const [sleepHours, setSleepHours] = useState(todayEntry?.sleepHours || '7-8h');
+  // Form State according to Iron Program PDF
   const [sleepScore, setSleepScore] = useState(todayEntry?.sleep || 4);
-  const [sorenessScore, setSorenessScore] = useState(todayEntry?.soreness || 4);
-  const [selectedAreas, setSelectedAreas] = useState(todayEntry?.sorenessAreas || ['Ninguna molestia']);
+  const [fatigueScore, setFatigueScore] = useState(todayEntry?.fatigue || todayEntry?.soreness || 4);
   const [energyScore, setEnergyScore] = useState(todayEntry?.energy || 4);
-  const [notes, setNotes] = useState(todayEntry?.notes || '');
+  const [stressScore, setStressScore] = useState(todayEntry?.stress || 3);
+  const [prsScore, setPrsScore] = useState(todayEntry?.prs ?? (todayEntry?.score ? Math.round(todayEntry.score / 10) : 8));
+  
+  // Pain / Molestia independent alert
+  const [hasPain, setHasPain] = useState(todayEntry?.hasPain || (todayEntry?.sorenessAreas && todayEntry.sorenessAreas[0] !== 'Ninguna molestia') || false);
+  const [painAreas, setPainAreas] = useState(todayEntry?.painAreas || todayEntry?.sorenessAreas || []);
+  const [painDescription, setPainDescription] = useState(todayEntry?.painDescription || todayEntry?.notes || '');
   const [activeDeload, setActiveDeload] = useState(isDeloadMode);
 
-  useEffect(() => {
-    if (currentUser?.id) {
-      const current = getUserConsents(currentUser.id);
-      setHealthConsentGiven(!!current.health_readiness);
-    }
-  }, [currentUser?.id, isOpen]);
+  // Track if user clicked "Ver mi estado" or viewing live
+  const [hasReviewedState, setHasReviewedState] = useState(false);
 
-  useEffect(() => {
-    if (todayEntry) {
-      setSleepHours(todayEntry.sleepHours || '7-8h');
-      setSleepScore(todayEntry.sleep || 4);
-      setSorenessScore(todayEntry.soreness || 4);
-      setSelectedAreas(todayEntry.sorenessAreas || ['Ninguna molestia']);
-      setEnergyScore(todayEntry.energy || 4);
-      setNotes(todayEntry.notes || '');
-      setActiveDeload(!!todayEntry.deloadMode);
-    }
-  }, [todayEntry, isOpen]);
+  // Form is initialized directly on mount from todayEntry and userConsents
 
-  // Calculate live readiness score (0-100)
-  // Max possible sum = 5 + 5 + 5 = 15. Min = 3.
-  const rawSum = sleepScore + sorenessScore + energyScore;
-  const readinessPercent = Math.round(((rawSum - 3) / 12) * 100);
+  // Compute live calculation using the Iron Program formula
+  const evaluation = calculateIronRecoveryScore({
+    sleep: sleepScore,
+    fatigue: fatigueScore,
+    energy: energyScore,
+    stress: stressScore,
+    prs: prsScore,
+    hasPain,
+    painDescription,
+    painAreas
+  });
 
-  // Status classification
-  let statusInfo = {
-    level: 'optimal',
-    color: '#22c55e',
-    badge: '🟢 Estado Óptimo (Alta Capacidad)',
-    message: '¡Tu cuerpo está recuperado y listo! Día ideal para empujar fuerte, buscar PRs o ir a por la versión RX del WOD.',
-    alert: false
-  };
+  const { score, scoreDisplay, stateData, downgraded, downgradeReason } = evaluation;
 
-  if (readinessPercent < 55) {
-    statusInfo = {
-      level: 'fatigue',
-      color: '#ef4444',
-      badge: '🔴 Alerta de Fatiga Alta',
-      message: 'Tu sistema nervioso y muscular reportan fatiga acumulada o falta de descanso. Te recomendamos activar el Modo Descarga (-10% a -15% en las barras) o priorizar técnica.',
-      alert: true
-    };
-  } else if (readinessPercent < 80) {
-    statusInfo = {
-      level: 'moderate',
-      color: '#eab308',
-      badge: '🟡 Recuperación Media / Regular',
-      message: 'Capacidad funcional estable. Entrena con buena técnica, alarga el calentamiento y dosifica el ritmo en los metcons.',
-      alert: false
-    };
-  }
-
-  // Toggle soreness area tags
-  const handleToggleArea = (area) => {
-    if (area === 'Ninguna molestia') {
-      setSelectedAreas(['Ninguna molestia']);
-      return;
-    }
-    let updated = selectedAreas.filter(a => a !== 'Ninguna molestia');
-    if (updated.includes(area)) {
-      updated = updated.filter(a => a !== area);
-      if (updated.length === 0) updated = ['Ninguna molestia'];
+  // Toggle quick pain area
+  const handleTogglePainArea = (area) => {
+    if (painAreas.includes(area)) {
+      setPainAreas(painAreas.filter(a => a !== area));
     } else {
-      updated.push(area);
-    }
-    setSelectedAreas(updated);
-  };
-
-  // Add quick note tag
-  const handleAddQuickNote = (tag) => {
-    if (notes.includes(tag)) return;
-    setNotes(prev => prev ? `${prev} • ${tag}` : tag);
-  };
-
-  const getSleepQualityText = (val) => {
-    switch (val) {
-      case 1: return 'Muy malo / Insomnio';
-      case 2: return 'Inquieto / Despertares';
-      case 3: return 'Normal / Descanso suficiente';
-      case 4: return 'Profundo y reparador';
-      case 5: return 'Óptimo al 100%';
-      default: return 'Normal';
-    }
-  };
-
-  const getSorenessText = (val) => {
-    switch (val) {
-      case 1: return 'Dolor severo / Rígido';
-      case 2: return 'Bastantes agujetas';
-      case 3: return 'Tensión moderada';
-      case 4: return 'Apenas molestias';
-      case 5: return 'Fresco / Cero dolor';
-      default: return 'Normal';
-    }
-  };
-
-  const getEnergyText = (val) => {
-    switch (val) {
-      case 1: return 'Agotado / Estrés alto';
-      case 2: return 'Batería baja';
-      case 3: return 'Energía media';
-      case 4: return 'Motivado y con buen foco';
-      case 5: return 'A tope de energía';
-      default: return 'Normal';
+      setPainAreas([...painAreas, area]);
     }
   };
 
   const handleSave = () => {
     if (!healthConsentGiven) {
-      alert('Para registrar datos de bienestar, fatiga o salud física, la Ley de Protección de Datos (RGPD Art. 9) exige tu consentimiento explícito previo.');
+      setSaveError('Para registrar datos de bienestar, fatiga o salud física, la Ley de Protección de Datos (RGPD Art. 9) exige tu consentimiento explícito previo.');
       return;
     }
+    setSaveError(null);
 
-    // Persistir el consentimiento explícito de salud en la auditoría RGPD
+    // Persist health consent
     updateConsent('health_readiness', true, currentUser?.id);
+
+    const isLimitedOrLow = evaluation.finalState === 'limited' || evaluation.finalState === 'low';
 
     saveDailyReadiness(currentUser?.id, {
       sleep: sleepScore,
-      sleepHours,
-      sleepQualityText: getSleepQualityText(sleepScore),
-      soreness: sorenessScore,
-      sorenessAreas: selectedAreas,
+      sleepText: VARIABLE_INTERPRETATIONS.sleep.labels[sleepScore],
+      fatigue: fatigueScore,
+      fatigueText: VARIABLE_INTERPRETATIONS.fatigue.labels[fatigueScore],
+      soreness: fatigueScore, // compatibility alias
       energy: energyScore,
-      energyText: getEnergyText(energyScore),
-      score: readinessPercent,
-      level: statusInfo.level,
-      deloadMode: activeDeload,
-      notes: notes.trim(),
+      energyText: VARIABLE_INTERPRETATIONS.energy.labels[energyScore],
+      stress: stressScore,
+      stressText: VARIABLE_INTERPRETATIONS.stress.labels[stressScore],
+      prs: prsScore,
+      // Main Iron Program Score
+      score: score, // decimal 0-10
+      scoreDisplay,
+      baseState: evaluation.baseState,
+      finalState: evaluation.finalState,
+      level: evaluation.finalState === 'low' ? 'fatigue' : evaluation.finalState === 'limited' ? 'limited' : evaluation.finalState === 'adequate' ? 'moderate' : 'optimal', // compatibility
+      statusLabel: stateData.name,
+      headline: stateData.headline,
+      guidelines: stateData.guidelines,
+      volumeReduction: stateData.volumeReduction,
+      downgraded,
+      downgradeReason,
+      // Pain & Molestias
+      hasPain,
+      painAreas,
+      sorenessAreas: painAreas.length > 0 ? painAreas : ['Ninguna molestia'], // compatibility alias
+      painDescription: painDescription.trim(),
+      notes: painDescription.trim(),
+      deloadMode: activeDeload || (isLimitedOrLow && activeDeload),
       isPrivate: true,
       gdprHealthConsentGranted: true,
       gdprConsentTimestamp: new Date().toISOString()
     });
+
     onClose();
   };
 
@@ -195,25 +148,25 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: '470px',
-          maxHeight: '92vh',
+          maxWidth: '510px',
+          maxHeight: '94vh',
           background: 'radial-gradient(circle at 50% 0%, #1e1333 0%, #0d0d14 100%)',
           borderRadius: '24px',
-          border: statusInfo.alert ? '1.5px solid rgba(239, 68, 68, 0.6)' : '1.5px solid rgba(255, 45, 120, 0.4)',
+          border: `1.5px solid ${stateData.borderColor}77`,
           overflowY: 'auto',
           padding: '20px 18px',
           display: 'flex',
           flexDirection: 'column',
           gap: '14px',
-          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.85)'
+          boxShadow: `0 20px 50px rgba(0, 0, 0, 0.9), 0 0 30px ${stateData.color}22`
         }}
       >
-        {/* Header with Privacy Guarantee */}
+        {/* Header: Iron Program Official Branding */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
-              width: '38px',
-              height: '38px',
+              width: '40px',
+              height: '40px',
               borderRadius: '12px',
               background: 'linear-gradient(135deg, rgba(255, 45, 120, 0.25) 0%, rgba(168, 85, 247, 0.25) 100%)',
               border: '1px solid rgba(255, 45, 120, 0.4)',
@@ -222,12 +175,21 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
               justifyContent: 'center',
               color: 'var(--brand-pink)'
             }}>
-              <Moon size={20} />
+              <Sparkles size={20} />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{
                   fontSize: '9.5px',
+                  fontWeight: '900',
+                  color: 'var(--brand-pink)',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase'
+                }}>
+                  IRON PROGRAM
+                </span>
+                <span style={{
+                  fontSize: '9px',
                   fontWeight: '800',
                   color: '#22c55e',
                   background: 'rgba(34, 197, 94, 0.15)',
@@ -237,103 +199,61 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
                   alignItems: 'center',
                   gap: '3px'
                 }}>
-                  <Lock size={9} /> PRIVADO PARA TU COACH
+                  <Lock size={9} /> COACH PRIVADO
                 </span>
               </div>
-              <h2 style={{ fontSize: '15.5px', fontWeight: '900', color: '#ffffff', margin: '2px 0 0 0' }}>
-                Check-in de Sueño y Bienestar
+              <h2 style={{ fontSize: '16px', fontWeight: '900', color: '#ffffff', margin: '2px 0 0 0' }}>
+                Evaluación Diaria de Recuperación
               </h2>
             </div>
           </div>
 
           <button 
+            type="button"
             onClick={onClose}
+            title="Cerrar test (puedes completarlo más tarde)"
+            aria-label="Cerrar test"
             style={{
-              width: '30px',
-              height: '30px',
+              width: '36px',
+              height: '36px',
               borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: 'none',
-              color: 'var(--text-muted)',
+              background: 'rgba(255, 255, 255, 0.12)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              color: '#ffffff',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              flexShrink: 0
             }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 45, 120, 0.3)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'}
           >
-            <X size={16} />
+            <X size={18} />
           </button>
         </div>
 
-        {/* Privacy Note Banner */}
+        {/* Objetivo < 30 seg banner */}
         <div style={{
-          background: 'rgba(168, 85, 247, 0.08)',
-          border: '1px solid rgba(168, 85, 247, 0.25)',
+          background: 'rgba(255, 255, 255, 0.03)',
+          border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-sm)',
           padding: '8px 12px',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          fontSize: '11px',
-          color: 'var(--brand-lilac-light)'
-        }}>
-          <ShieldCheck size={16} style={{ flexShrink: 0 }} />
-          <span>
-            <strong>Información confidencial:</strong> Solo tu Head Coach verá estos datos para planificar tus descansos y prevenir lesiones. Nadie más en el box tiene acceso.
-          </span>
-        </div>
-
-        {/* Live Readiness Hero Result */}
-        <div style={{
-          background: 'rgba(0, 0, 0, 0.4)',
-          borderRadius: 'var(--radius-lg)',
-          border: `1.5px solid ${statusInfo.color}55`,
-          padding: '12px 14px',
-          display: 'flex',
-          alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '12px',
-          boxShadow: `0 4px 20px ${statusInfo.color}22`
+          fontSize: '11px',
+          color: 'var(--text-secondary)'
         }}>
-          <div>
-            <span style={{
-              fontSize: '11px',
-              fontWeight: '800',
-              color: statusInfo.color,
-              display: 'block',
-              marginBottom: '2px'
-            }}>
-              {statusInfo.badge}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-              <span style={{ fontSize: '28px', fontWeight: '900', color: '#ffffff', fontFamily: 'monospace' }}>
-                {readinessPercent}%
-              </span>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '700' }}>
-                Índice de Recuperación
-              </span>
-            </div>
-          </div>
-
-          <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '50%',
-            background: `${statusInfo.color}22`,
-            border: `2px solid ${statusInfo.color}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: statusInfo.color
-          }}>
-            {statusInfo.alert ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}
-          </div>
+          <span>Completa las 5 variables en menos de <strong>30 segundos</strong> para obtener tu pauta.</span>
+          <span style={{ color: 'var(--brand-lilac-light)', fontWeight: '800' }}>⚡ Rápido</span>
         </div>
 
-        {/* Questions Section - Detailed yet 1-Tap fast */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          
-          {/* Question 1: Sleep Hours & Quality */}
+        {/* 5 Variables del Iron Program */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+          {/* 1. SUEÑO (1-5) */}
           <div style={{
             background: 'var(--bg-surface)',
             padding: '12px 14px',
@@ -341,78 +261,51 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
             border: '1px solid var(--border-subtle)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '10px'
+            gap: '8px'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Moon size={15} color="var(--brand-lilac-light)" />
-                <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff' }}>
-                  1. Sueño y Descanso Nocturno
+                <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#ffffff' }}>
+                  1. Sueño
                 </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(Escala 1-5)</span>
               </div>
-              <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--brand-pink)' }}>
-                {getSleepQualityText(sleepScore)}
+              <span style={{ fontSize: '11.5px', fontWeight: '800', color: 'var(--brand-pink)' }}>
+                {sleepScore}/5 · {VARIABLE_INTERPRETATIONS.sleep.labels[sleepScore]}
               </span>
             </div>
 
-            {/* Quick Sleep Hours Selector */}
-            <div>
-              <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-                ¿Cuántas horas dormiste anoche?
-              </span>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
-                {['< 5h', '5-6h', '6-7h', '7-8h', '> 8h'].map(hours => (
-                  <button
-                    key={hours}
-                    type="button"
-                    onClick={() => setSleepHours(hours)}
-                    style={{
-                      padding: '6px 0',
-                      borderRadius: 'var(--radius-xs)',
-                      fontSize: '11px',
-                      fontWeight: '800',
-                      background: sleepHours === hours ? 'var(--brand-pink)' : 'var(--bg-secondary)',
-                      color: sleepHours === hours ? '#ffffff' : 'var(--text-secondary)',
-                      border: sleepHours === hours ? 'none' : '1px solid var(--border-subtle)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {hours}
-                  </button>
-                ))}
-              </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '5px' }}>
+              {[1, 2, 3, 4, 5].map(val => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setSleepScore(val)}
+                  style={{
+                    padding: '8px 0',
+                    borderRadius: 'var(--radius-xs)',
+                    fontSize: '12px',
+                    fontWeight: '900',
+                    background: sleepScore === val ? 'var(--brand-gradient)' : 'var(--bg-secondary)',
+                    color: sleepScore === val ? '#ffffff' : 'var(--text-secondary)',
+                    border: sleepScore === val ? '1px solid var(--brand-pink)' : '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {val}
+                </button>
+              ))}
             </div>
-
-            {/* Sleep Quality (1 to 5) */}
-            <div>
-              <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-                Calidad del descanso (1=Insomnio, 5=Óptimo)
-              </span>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
-                {[1, 2, 3, 4, 5].map(val => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setSleepScore(val)}
-                    style={{
-                      padding: '7px 0',
-                      borderRadius: 'var(--radius-xs)',
-                      fontSize: '12px',
-                      fontWeight: '900',
-                      background: sleepScore === val ? 'var(--brand-gradient)' : 'var(--bg-secondary)',
-                      color: sleepScore === val ? '#ffffff' : 'var(--text-secondary)',
-                      border: sleepScore === val ? 'none' : '1px solid var(--border-subtle)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {val}
-                  </button>
-                ))}
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: 'var(--text-muted)' }}>
+              <span>1: Muy malo</span>
+              <span>3: Normal</span>
+              <span>5: Muy bueno</span>
             </div>
           </div>
 
-          {/* Question 2: Muscle Soreness & Areas */}
+          {/* 2. FATIGA MUSCULAR (1-5) */}
           <div style={{
             background: 'var(--bg-surface)',
             padding: '12px 14px',
@@ -420,95 +313,51 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
             border: '1px solid var(--border-subtle)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '10px'
+            gap: '8px'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Activity size={15} color="#38bdf8" />
-                <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff' }}>
-                  2. Dolor Muscular y Articulaciones
+                <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#ffffff' }}>
+                  2. Fatiga muscular
                 </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(Escala 1-5)</span>
               </div>
-              <span style={{ fontSize: '11px', fontWeight: '800', color: '#38bdf8' }}>
-                {getSorenessText(sorenessScore)}
+              <span style={{ fontSize: '11.5px', fontWeight: '800', color: '#38bdf8' }}>
+                {fatigueScore}/5 · {VARIABLE_INTERPRETATIONS.fatigue.labels[fatigueScore]}
               </span>
             </div>
 
-            {/* Soreness Scale (1 to 5) */}
-            <div>
-              <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-                Nivel general de agujetas (1=Severo, 5=Cero dolor)
-              </span>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
-                {[1, 2, 3, 4, 5].map(val => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setSorenessScore(val)}
-                    style={{
-                      padding: '7px 0',
-                      borderRadius: 'var(--radius-xs)',
-                      fontSize: '12px',
-                      fontWeight: '900',
-                      background: sorenessScore === val ? 'linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)' : 'var(--bg-secondary)',
-                      color: sorenessScore === val ? '#ffffff' : 'var(--text-secondary)',
-                      border: sorenessScore === val ? 'none' : '1px solid var(--border-subtle)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {val}
-                  </button>
-                ))}
-              </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '5px' }}>
+              {[1, 2, 3, 4, 5].map(val => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setFatigueScore(val)}
+                  style={{
+                    padding: '8px 0',
+                    borderRadius: 'var(--radius-xs)',
+                    fontSize: '12px',
+                    fontWeight: '900',
+                    background: fatigueScore === val ? 'linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)' : 'var(--bg-secondary)',
+                    color: fatigueScore === val ? '#ffffff' : 'var(--text-secondary)',
+                    border: fatigueScore === val ? '1px solid #38bdf8' : '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {val}
+                </button>
+              ))}
             </div>
-
-            {/* Specific Soreness Areas (Multi-select 1-tap chips) */}
-            <div>
-              <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                ¿Zonas con molestia hoy? (Selección rápida)
-              </span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                {[
-                  'Ninguna molestia',
-                  'Piernas / Rodillas',
-                  'Espalda baja / Lumbar',
-                  'Hombros / Trapecios',
-                  'Brazos / Muñecas',
-                  'Pectoral / Cuello'
-                ].map(area => {
-                  const isSelected = selectedAreas.includes(area);
-                  return (
-                    <button
-                      key={area}
-                      type="button"
-                      onClick={() => handleToggleArea(area)}
-                      style={{
-                        padding: '4px 8px',
-                        borderRadius: 'var(--radius-full)',
-                        fontSize: '10.5px',
-                        fontWeight: '700',
-                        background: isSelected 
-                          ? (area === 'Ninguna molestia' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(56, 189, 248, 0.2)')
-                          : 'var(--bg-secondary)',
-                        color: isSelected 
-                          ? (area === 'Ninguna molestia' ? '#22c55e' : '#38bdf8')
-                          : 'var(--text-muted)',
-                        border: isSelected 
-                          ? (area === 'Ninguna molestia' ? '1px solid #22c55e' : '1px solid #38bdf8')
-                          : '1px solid var(--border-subtle)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      {isSelected ? '✓ ' : '+ '}{area}
-                    </button>
-                  );
-                })}
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: 'var(--text-muted)' }}>
+              <span>1: Muy fatigado</span>
+              <span>3: Normal</span>
+              <span>5: Muy fresco</span>
             </div>
           </div>
 
-          {/* Question 3: Energy & Stress */}
+          {/* 3. ENERGÍA (1-5) */}
           <div style={{
             background: 'var(--bg-surface)',
             padding: '12px 14px',
@@ -521,39 +370,46 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Zap size={15} color="#eab308" />
-                <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff' }}>
-                  3. Nivel de Energía y Estrés Diario
+                <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#ffffff' }}>
+                  3. Energía
                 </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(Escala 1-5)</span>
               </div>
-              <span style={{ fontSize: '11px', fontWeight: '800', color: '#eab308' }}>
-                {getEnergyText(energyScore)}
+              <span style={{ fontSize: '11.5px', fontWeight: '800', color: '#eab308' }}>
+                {energyScore}/5 · {VARIABLE_INTERPRETATIONS.energy.labels[energyScore]}
               </span>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '5px' }}>
               {[1, 2, 3, 4, 5].map(val => (
                 <button
                   key={val}
                   type="button"
                   onClick={() => setEnergyScore(val)}
                   style={{
-                    padding: '7px 0',
+                    padding: '8px 0',
                     borderRadius: 'var(--radius-xs)',
                     fontSize: '12px',
                     fontWeight: '900',
                     background: energyScore === val ? 'linear-gradient(135deg, #ca8a04 0%, #eab308 100%)' : 'var(--bg-secondary)',
                     color: energyScore === val ? '#ffffff' : 'var(--text-secondary)',
-                    border: energyScore === val ? 'none' : '1px solid var(--border-subtle)',
-                    cursor: 'pointer'
+                    border: energyScore === val ? '1px solid #eab308' : '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
                   }}
                 >
                   {val}
                 </button>
               ))}
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: 'var(--text-muted)' }}>
+              <span>1: Muy baja</span>
+              <span>3: Normal</span>
+              <span>5: Muy alta</span>
+            </div>
           </div>
 
-          {/* Question 4: Private Note to Coach (Quick tags + input) */}
+          {/* 4. ESTRÉS (1-5) */}
           <div style={{
             background: 'var(--bg-surface)',
             padding: '12px 14px',
@@ -563,99 +419,398 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
             flexDirection: 'column',
             gap: '8px'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <MessageSquare size={14} color="var(--brand-lilac-light)" />
-              <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff' }}>
-                4. Nota Privada para el Coach (Opcional)
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Brain size={15} color="#a855f7" />
+                <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#ffffff' }}>
+                  4. Estrés
+                </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(Escala 1-5)</span>
+              </div>
+              <span style={{ fontSize: '11.5px', fontWeight: '800', color: 'var(--brand-lilac-light)' }}>
+                {stressScore}/5 · {VARIABLE_INTERPRETATIONS.stress.labels[stressScore]}
               </span>
             </div>
 
-            {/* Quick tags to tap in 1 second */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-              {[
-                'Turno laboral duro',
-                'Poco tiempo hoy',
-                'Molestia al calentar',
-                'Con ganas de buscar PR'
-              ].map(tag => (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '5px' }}>
+              {[1, 2, 3, 4, 5].map(val => (
                 <button
-                  key={tag}
+                  key={val}
                   type="button"
-                  onClick={() => handleAddQuickNote(tag)}
+                  onClick={() => setStressScore(val)}
                   style={{
-                    padding: '3px 7px',
-                    borderRadius: 'var(--radius-full)',
-                    fontSize: '10px',
-                    fontWeight: '700',
-                    background: notes.includes(tag) ? 'rgba(255, 45, 120, 0.2)' : 'var(--bg-secondary)',
-                    color: notes.includes(tag) ? 'var(--brand-pink)' : 'var(--text-muted)',
-                    border: notes.includes(tag) ? '1px solid var(--brand-pink)' : '1px solid var(--border-subtle)',
-                    cursor: 'pointer'
+                    padding: '8px 0',
+                    borderRadius: 'var(--radius-xs)',
+                    fontSize: '12px',
+                    fontWeight: '900',
+                    background: stressScore === val ? 'linear-gradient(135deg, #7e22ce 0%, #a855f7 100%)' : 'var(--bg-secondary)',
+                    color: stressScore === val ? '#ffffff' : 'var(--text-secondary)',
+                    border: stressScore === val ? '1px solid #a855f7' : '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
                   }}
                 >
-                  + {tag}
+                  {val}
                 </button>
               ))}
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: 'var(--text-muted)' }}>
+              <span>1: Muy alto</span>
+              <span>3: Normal</span>
+              <span>5: Muy bajo</span>
+            </div>
+          </div>
 
+          {/* 5. PRS / RECUPERACIÓN GENERAL (0-10) */}
+          <div style={{
+            background: 'var(--bg-surface)',
+            padding: '12px 14px',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border-subtle)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Gauge size={15} color="#22c55e" />
+                <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#ffffff' }}>
+                  5. PRS / Recuperación general
+                </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(0-10)</span>
+              </div>
+              <span style={{ fontSize: '14px', fontWeight: '900', color: '#22c55e', fontFamily: 'monospace' }}>
+                {prsScore} / 10
+              </span>
+            </div>
+
+            <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0 }}>
+              "¿Cómo de recuperado te sientes hoy para entrenar?" (Laurent et al. 2011)
+            </p>
+
+            {/* Slider 0-10 */}
             <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ej: Dormí poco por el turno, pero sin molestias en piernas..."
+              type="range"
+              min="0"
+              max="10"
+              step="1"
+              value={prsScore}
+              onChange={(e) => setPrsScore(Number(e.target.value))}
               style={{
                 width: '100%',
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-xs)',
-                padding: '8px 10px',
-                fontSize: '12px',
-                color: '#ffffff',
-                outline: 'none'
+                accentColor: '#22c55e',
+                cursor: 'pointer',
+                margin: '4px 0'
               }}
             />
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(11, 1fr)', gap: '2px' }}>
+              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setPrsScore(val)}
+                  style={{
+                    padding: '4px 0',
+                    fontSize: '10px',
+                    fontWeight: '800',
+                    borderRadius: '3px',
+                    background: prsScore === val ? '#22c55e' : 'var(--bg-secondary)',
+                    color: prsScore === val ? '#000000' : 'var(--text-secondary)',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {val}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* PREGUNTA ADICIONAL DE DOLOR / MOLESTIA (Sí / No) */}
+          <div style={{
+            background: hasPain ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-surface)',
+            padding: '12px 14px',
+            borderRadius: 'var(--radius-md)',
+            border: hasPain ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border-subtle)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            transition: 'all 0.2s ease'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff' }}>
+                ¿Tienes alguna molestia o dolor que pueda afectar al entrenamiento de hoy?
+              </span>
+
+              {/* Sí / No Toggles */}
+              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHasPain(false);
+                    setPainAreas([]);
+                    setPainDescription('');
+                  }}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 'var(--radius-xs)',
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    background: !hasPain ? '#22c55e' : 'var(--bg-secondary)',
+                    color: !hasPain ? '#000000' : 'var(--text-secondary)',
+                    border: !hasPain ? 'none' : '1px solid var(--border-subtle)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  No
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setHasPain(true)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 'var(--radius-xs)',
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    background: hasPain ? '#ef4444' : 'var(--bg-secondary)',
+                    color: hasPain ? '#ffffff' : 'var(--text-secondary)',
+                    border: hasPain ? 'none' : '1px solid var(--border-subtle)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Sí
+                </button>
+              </div>
+            </div>
+
+            {/* Si responde Sí: mostrar campo ¿Dónde y qué notas? */}
+            {hasPain && (
+              <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ef4444', fontSize: '11px', fontWeight: '700' }}>
+                  <AlertTriangle size={13} />
+                  <span>¿Dónde y qué notas? (Alerta independiente para el Coach)</span>
+                </div>
+
+                {/* Zonas rápidas con un toque */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                  {[
+                    'Hombros / Trapecios',
+                    'Espalda baja / Lumbar',
+                    'Rodillas / Cuádriceps',
+                    'Brazos / Muñecas',
+                    'Tobillos / Gemelos',
+                    'Isquios / Glúteos',
+                    'Cuello / Cervicales'
+                  ].map(area => {
+                    const isSelected = painAreas.includes(area);
+                    return (
+                      <button
+                        key={area}
+                        type="button"
+                        onClick={() => handleTogglePainArea(area)}
+                        style={{
+                          padding: '4px 8px',
+                          borderRadius: 'var(--radius-full)',
+                          fontSize: '10.5px',
+                          fontWeight: '700',
+                          background: isSelected ? 'rgba(239, 68, 68, 0.25)' : 'var(--bg-secondary)',
+                          color: isSelected ? '#fca5a5' : 'var(--text-muted)',
+                          border: isSelected ? '1px solid #ef4444' : '1px solid var(--border-subtle)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {isSelected ? '✓ ' : '+ '}{area}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <input
+                  type="text"
+                  value={painDescription}
+                  onChange={(e) => setPainDescription(e.target.value)}
+                  placeholder="Describe la molestia (ej: pinchazo leve en hombro al subir la barra)..."
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-xs)',
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    fontSize: '11.5px',
+                    color: '#ffffff'
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Deload Mode Switcher if High Fatigue */}
-        {statusInfo.alert && (
-          <div style={{
-            background: 'rgba(239, 68, 68, 0.15)',
-            border: '1.5px solid rgba(239, 68, 68, 0.4)',
-            borderRadius: 'var(--radius-md)',
-            padding: '10px 12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '10px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShieldAlert size={18} color="#ef4444" />
-              <div>
-                <span style={{ fontSize: '11.5px', fontWeight: '800', color: '#ffffff', display: 'block' }}>
-                  Activar Modo Descarga
-                </span>
-                <span style={{ fontSize: '10.5px', color: '#fca5a5' }}>
-                  Ajusta las cargas un -15% automáticamente hoy.
+        {/* Botón [ VER MI ESTADO ] según Interfaz recomendada del PDF */}
+        {!hasReviewedState ? (
+          <button
+            type="button"
+            onClick={() => setHasReviewedState(true)}
+            className="btn-primary"
+            style={{
+              width: '100%',
+              padding: '12px',
+              fontSize: '13.5px',
+              fontWeight: '900',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px'
+            }}
+          >
+            <span>[ VER MI ESTADO ]</span>
+            <ArrowDown size={16} />
+          </button>
+        ) : null}
+
+        {/* TARJETA DE ESTADO AUTOMÁTICO (Estructura exacta recomendada por el PDF) */}
+        {hasReviewedState && (
+          <div 
+            className="animate-fade-in"
+            style={{
+              background: stateData.bgColor,
+              borderRadius: 'var(--radius-lg)',
+              border: `1.5px solid ${stateData.borderColor}`,
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              boxShadow: `0 4px 20px ${stateData.color}25`
+            }}
+          >
+            {/* Header del Estado: EMOJI + NOMBRE + PUNTUACIÓN */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>{stateData.iconEmoji}</span>
+                <div>
+                  <span style={{
+                    fontSize: '12px',
+                    fontWeight: '900',
+                    color: stateData.color,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase'
+                  }}>
+                    {stateData.name} ({stateData.rangeLabel})
+                  </span>
+                  <h3 style={{ fontSize: '15px', fontWeight: '900', color: '#ffffff', margin: 0 }}>
+                    {stateData.headline}
+                  </h3>
+                </div>
+              </div>
+
+              {/* Recovery Score con un decimal */}
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px' }}>
+                  <span style={{ fontSize: '24px', fontWeight: '900', color: stateData.color, fontFamily: 'monospace' }}>
+                    {scoreDisplay}
+                  </span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '800' }}>
+                    / 10
+                  </span>
+                </div>
+                <span style={{ fontSize: '9.5px', color: 'var(--text-secondary)' }}>
+                  Recovery Score
                 </span>
               </div>
             </div>
 
-            <input
-              type="checkbox"
-              checked={activeDeload}
-              onChange={(e) => setActiveDeload(e.target.checked)}
-              style={{
-                width: '18px',
-                height: '18px',
-                accentColor: '#ef4444',
-                cursor: 'pointer'
-              }}
-            />
+            {/* Pautas Concretas para ese día (Texto oficial del PDF) */}
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.4)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '10px 12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}>
+              <span style={{ fontSize: '10.5px', fontWeight: '800', color: stateData.color, textTransform: 'uppercase' }}>
+                Pautas automáticas para hoy:
+              </span>
+              <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '11.5px', color: '#f1f5f9', lineHeight: '1.45' }}>
+                {stateData.guidelines.map((point, idx) => (
+                  <li key={idx} style={{ marginBottom: '3px' }}>
+                    {point}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Regla con prioridad: Aviso si se bajó de estadio */}
+            {downgraded && (
+              <div style={{
+                background: 'rgba(249, 115, 22, 0.15)',
+                border: '1px solid #f97316',
+                borderRadius: 'var(--radius-xs)',
+                padding: '8px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '11px',
+                color: '#fdba74'
+              }}>
+                <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                <span>
+                  <strong>Regla con prioridad sobre el score:</strong> 2 o más variables entre Sueño, Fatiga, Energía o Estrés están en 1/5. Se ha bajado automáticamente un estadio de entrenamiento por seguridad.
+                </span>
+              </div>
+            )}
+
+            {/* Regla con prioridad: Aviso de dolor si responde Sí */}
+            {hasPain && (
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid #ef4444',
+                borderRadius: 'var(--radius-xs)',
+                padding: '8px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '11px',
+                color: '#fca5a5'
+              }}>
+                <ShieldAlert size={15} style={{ flexShrink: 0 }} />
+                <span>
+                  <strong>Aviso específico de dolor/molestia:</strong> Recomienda adaptar o consultar con el coach antes de empezar. El dolor funciona como alerta independiente y no altera la media matemática.
+                </span>
+              </div>
+            )}
+
+            {/* Toggle de Modo Descarga en caso de reducción de volumen sugerida */}
+            {(evaluation.finalState === 'limited' || evaluation.finalState === 'low') && (
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.04)',
+                borderRadius: 'var(--radius-xs)',
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <ShieldAlert size={15} color="#ef4444" />
+                  <span style={{ fontSize: '11px', color: '#ffffff', fontWeight: '700' }}>
+                    Activar Modo Descarga (-15% en barras hoy)
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={activeDeload}
+                  onChange={(e) => setActiveDeload(e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--brand-pink)', cursor: 'pointer' }}
+                />
+              </div>
+            )}
           </div>
         )}
 
-        {/* RGPD / LOPDGDD: Consentimiento Explícito de Datos de Salud (Art. 9.2.a) */}
+        {/* RGPD Art. 9: Consentimiento explícito de datos de salud */}
         <div style={{
           background: healthConsentGiven ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255, 45, 120, 0.09)',
           border: healthConsentGiven ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255, 45, 120, 0.35)',
@@ -689,8 +844,8 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
                 flexShrink: 0
               }}
             />
-            <span style={{ fontSize: '11px', color: '#e2e8f0', lineHeight: '1.4' }}>
-              <strong>Consentimiento explícito (RGPD Art. 9):</strong> Autorizo de forma expresa el tratamiento de mis datos de descanso, fatiga física y posibles molestias musculares para que mi Head Coach personalice mis cargas deportivas y prevenga sobrecargas.
+            <span style={{ fontSize: '10.5px', color: '#e2e8f0', lineHeight: '1.4' }}>
+              <strong>Consentimiento explícito (RGPD Art. 9):</strong> Autorizo de forma expresa el tratamiento de mis datos de descanso, fatiga física y posibles molestias musculares para que mi Head Coach adapte mis cargas y prevenga sobrecargas.
             </span>
           </label>
 
@@ -702,17 +857,13 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
                 background: 'transparent',
                 border: 'none',
                 color: 'var(--brand-lilac-light)',
-                fontSize: '10.5px',
+                fontSize: '10px',
                 fontWeight: '700',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
                 cursor: 'pointer',
                 padding: '0'
               }}
             >
-              <Info size={12} />
-              <span>{showLegalDetails ? 'Ocultar información legal' : 'Ver Cláusula Informativa AEPD (1ª Capa)'}</span>
+              {showLegalDetails ? 'Ocultar información legal' : 'Ver Cláusula Informativa AEPD (1ª Capa)'}
             </button>
 
             <span style={{
@@ -727,52 +878,96 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
             </span>
           </div>
 
-          {/* Primera Capa Informativa (Directriz AEPD / Art. 11 LOPDGDD) */}
           {showLegalDetails && (
             <div style={{
               background: 'rgba(0, 0, 0, 0.45)',
               border: '1px solid rgba(255, 255, 255, 0.08)',
               borderRadius: 'var(--radius-xs)',
               padding: '8px 10px',
-              fontSize: '10px',
+              fontSize: '9.5px',
               color: '#cbd5e1',
-              lineHeight: '1.45',
+              lineHeight: '1.4',
               display: 'flex',
               flexDirection: 'column',
-              gap: '4px'
+              gap: '3px'
             }}>
               <div><strong>Responsable del Tratamiento:</strong> Hift Iron Box S.L. / Titular del Box.</div>
-              <div><strong>Finalidad:</strong> Ajuste técnico de intensidad de WODs, prevención de lesiones y seguimiento de fatiga.</div>
+              <div><strong>Finalidad:</strong> Ajuste de intensidad de WODs, prevención de sobrecargas y seguimiento de fatiga.</div>
               <div><strong>Base Jurídica:</strong> Consentimiento explícito del interesado (Art. 9.2.a RGPD).</div>
-              <div><strong>Destinatarios:</strong> Acceso reservado exclusivamente al Head Coach y titular. No se cederán a terceros.</div>
-              <div><strong>Derechos:</strong> Acceso, rectificación, supresión, limitación y revocación desde tu Perfil &gt; Privacidad.</div>
+              <div><strong>Destinatarios:</strong> Acceso reservado exclusivamente al Head Coach. No se ceden a terceros.</div>
+              <div><strong>Nota metodológica:</strong> La PRS (Laurent et al. 2011) es una herramienta interna de autorregulación y no una escala clínica validada.</div>
             </div>
           )}
         </div>
 
-        {/* Submit Button */}
-        <button
-          onClick={handleSave}
-          className="btn-primary"
-          disabled={!healthConsentGiven}
-          style={{
-            width: '100%',
-            padding: '13px',
-            fontSize: '13px',
-            fontWeight: '900',
-            borderRadius: 'var(--radius-sm)',
-            marginTop: '2px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            opacity: healthConsentGiven ? 1 : 0.5,
-            cursor: healthConsentGiven ? 'pointer' : 'not-allowed'
-          }}
-        >
-          <Lock size={15} />
-          <span>Guardar Registro Privado para el Coach</span>
-        </button>
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' }}>
+          {saveError && (
+            <div style={{
+              padding: '8px 12px',
+              borderRadius: 'var(--radius-xs)',
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              color: '#ef4444',
+              fontSize: '11.5px',
+              fontWeight: '600'
+            }}>
+              {saveError}
+            </div>
+          )}
+          <button
+            onClick={handleSave}
+            className="btn-primary"
+            disabled={!healthConsentGiven}
+            style={{
+              width: '100%',
+              padding: '13px',
+              fontSize: '13.5px',
+              fontWeight: '900',
+              borderRadius: 'var(--radius-sm)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              opacity: healthConsentGiven ? 1 : 0.5,
+              cursor: healthConsentGiven ? 'pointer' : 'not-allowed'
+            }}
+          >
+            <Lock size={15} />
+            <span>Guardar en Historial y Aplicar Pauta ⚡</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: '100%',
+              padding: '10px',
+              background: 'transparent',
+              border: '1px solid rgba(255, 255, 255, 0.14)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-secondary)',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              transition: 'all 0.15s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
+              e.currentTarget.style.color = '#ffffff';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.14)';
+              e.currentTarget.style.color = 'var(--text-secondary)';
+            }}
+          >
+            <span>Hacer el test más tarde / Cerrar</span>
+          </button>
+        </div>
       </div>
     </div>
   );

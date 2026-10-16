@@ -1,6 +1,5 @@
 import React from 'react';
 import { MUSCLE_GROUPS } from '../../data/initialWorkouts';
-import { Dumbbell } from 'lucide-react';
 
 export default function MuscleGroupSelector({ selectedGroup, onSelectGroup }) {
   return (

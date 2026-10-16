@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, Percent, Dumbbell, Sparkles, Check, ChevronDown, RotateCcw, Plus, Minus, Info } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, Percent, Plus, Minus } from 'lucide-react';
 import { useWorkouts } from '../../context/WorkoutContext';
 
 // Color and size map for authentic Olympic bumper plates
@@ -27,8 +27,9 @@ export default function PercentageCalculatorModal({ isOpen, onClose, initialData
   const [barWeight, setBarWeight] = useState(20); // 20kg (men) | 15kg (women) | 10kg (technique)
   const [roundingStep, setRoundingStep] = useState(2.5); // Round to nearest 2.5kg or 1kg
 
-  // Look up if user has a PR for current exercise
-  useEffect(() => {
+  const [prevInitialData, setPrevInitialData] = useState(initialData);
+  if (initialData !== prevInitialData) {
+    setPrevInitialData(initialData);
     if (initialData.exercise) {
       setExerciseName(initialData.exercise);
     }
@@ -37,22 +38,20 @@ export default function PercentageCalculatorModal({ isOpen, onClose, initialData
     }
     if (initialData.oneRepMax) {
       setOneRepMax(parseFloat(initialData.oneRepMax));
-      return;
-    }
-
-    // Try finding matching PR in context
-    const matchingPr = prs.find(p => 
-      p.exercise.toLowerCase().includes((initialData.exercise || exerciseName).toLowerCase()) ||
-      (initialData.exercise || exerciseName).toLowerCase().includes(p.exercise.toLowerCase())
-    );
-
-    if (matchingPr) {
-      const parsed = parseFloat(matchingPr.weight);
-      if (!isNaN(parsed) && parsed > 0) {
-        setOneRepMax(parsed);
+    } else {
+      const targetName = initialData.exercise || exerciseName;
+      const matchingPr = prs.find(p => 
+        p.exercise.toLowerCase().includes(targetName.toLowerCase()) ||
+        targetName.toLowerCase().includes(p.exercise.toLowerCase())
+      );
+      if (matchingPr) {
+        const parsed = parseFloat(matchingPr.weight);
+        if (!isNaN(parsed) && parsed > 0) {
+          setOneRepMax(parsed);
+        }
       }
     }
-  }, [isOpen, initialData, prs]);
+  }
 
   // Common benchmark movements with PR autofill
   const standardExercises = useMemo(() => [

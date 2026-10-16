@@ -1,8 +1,31 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { INITIAL_WORKOUTS, INITIAL_PRS } from '../data/initialWorkouts';
 import { useAuth } from './AuthContext';
 import confetti from 'canvas-confetti';
-import { getWeekKey, shiftWeekKey } from '../utils/weekManager';
+import { getWeekKey, formatLocalDate } from '../utils/weekManager';
+import { isSupabaseConfigured } from '../lib/supabase';
+import {
+  fetchWorkoutsFromSupabase,
+  upsertWorkoutInSupabase,
+  deleteWorkoutFromSupabase,
+  fetchWeeklyPlansFromSupabase,
+  saveWeeklyPlanInSupabase,
+  fetchBoxScheduleFromSupabase,
+  saveBoxScheduleInSupabase,
+  fetchPrsFromSupabase,
+  upsertPrInSupabase,
+  deletePrFromSupabase,
+  fetchPerformanceLogsFromSupabase,
+  upsertPerformanceLogInSupabase,
+  deletePerformanceLogFromSupabase,
+  fetchReadinessLogsFromSupabase,
+  upsertReadinessLogInSupabase,
+  fetchCompletedExercisesFromSupabase,
+  upsertCompletedExerciseInSupabase,
+  syncSeedDataToSupabase,
+  testSupabaseConnection
+} from '../services/supabaseService';
+import { generateSecureId } from '../utils/validators';
 
 const WorkoutContext = createContext();
 
@@ -58,210 +81,61 @@ export function WorkoutProvider({ children }) {
     return map[dayIndex] || 'mon';
   });
 
-  // Multi-week assignments for individual athletes: { [athleteId]: { [weekKey]: { [dayId]: workoutId } } }
+  // Multi-week assignments for individual athletes en memoria (nutrido desde Supabase)
   const [weeklyAthletePlans, setWeeklyAthletePlans] = useState(() => {
-    try {
-      const saved = localStorage.getItem('hift_weekly_athlete_plans_v1');
-      if (saved) return JSON.parse(saved);
-
-      // Migrar o inicializar con INITIAL_ATHLETE_PLANS para la semana actual
-      const currentWk = getWeekKey(new Date());
-      const oldPlans = localStorage.getItem('hift_athlete_plans_v2');
-      const base = oldPlans ? JSON.parse(oldPlans) : INITIAL_ATHLETE_PLANS;
-      const initial = {};
-      Object.keys(base).forEach(athleteId => {
-        initial[athleteId] = {
-          [currentWk]: { ...base[athleteId] }
-        };
-      });
-      return initial;
-    } catch {
-      return {};
-    }
+    const currentWk = getWeekKey(new Date());
+    const initial = {};
+    Object.keys(INITIAL_ATHLETE_PLANS).forEach(athleteId => {
+      initial[athleteId] = {
+        [currentWk]: { ...INITIAL_ATHLETE_PLANS[athleteId] }
+      };
+    });
+    return initial;
   });
 
-  // Multi-week assignments for general Box Competitors programming: { [weekKey]: { [dayId]: workoutId } }
-  const [boxWeeklySchedule, setBoxWeeklySchedule] = useState(() => {
-    try {
-      const saved = localStorage.getItem('hift_box_weekly_schedule_v1');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  // Guardar en localStorage al cambiar
-  useEffect(() => {
-    try {
-      localStorage.setItem('hift_weekly_athlete_plans_v1', JSON.stringify(weeklyAthletePlans));
-    } catch {
-      // Ignorar si cuota excedida
-    }
-  }, [weeklyAthletePlans]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('hift_box_weekly_schedule_v1', JSON.stringify(boxWeeklySchedule));
-    } catch {
-      // Ignorar si cuota excedida
-    }
-  }, [boxWeeklySchedule]);
+  // Multi-week assignments for general Box Competitors programming en memoria
+  const [boxWeeklySchedule, setBoxWeeklySchedule] = useState({});
 
   // Selected athlete in Admin Plan Manager (default: 'user-athlete-1')
   const [managingAthleteId, setManagingAthleteId] = useState('user-athlete-1');
 
-  // Workouts database (ensuring competitor workouts exist)
-  const [workouts, setWorkouts] = useState(() => {
-    try {
-      const saved = localStorage.getItem('hift_workouts_v3');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // If saved workouts don't have competitors zone yet, refresh
-        if (parsed.some(w => w.zone === 'competitors')) {
-          return parsed;
-        }
-      }
-      return INITIAL_WORKOUTS;
-    } catch {
-      return INITIAL_WORKOUTS;
-    }
-  });
+  // Workouts database en memoria
+  const [workouts, setWorkouts] = useState(INITIAL_WORKOUTS);
 
-  // PRs (Personal Records)
-  const [prs, setPrs] = useState(() => {
-    try {
-      const saved = localStorage.getItem('hift_prs_v3');
-      return saved ? JSON.parse(saved) : INITIAL_PRS;
-    } catch {
-      return INITIAL_PRS;
-    }
-  });
+  // PRs (Personal Records) en memoria
+  const [prs, setPrs] = useState(INITIAL_PRS);
 
-  // Daily performance logs (e.g. weights lifted, times recorded, series completed)
-  const [performanceLogs, setPerformanceLogs] = useState(() => {
-    try {
-      const saved = localStorage.getItem('hift_performance_logs_v1');
-      return saved ? JSON.parse(saved) : [
-        {
-          id: 'log-demo-1',
-          userId: 'user-athlete-1',
-          zone: 'competitors',
-          workoutId: 'comp-mon-snatch-engine',
-          exerciseName: 'Snatch Complex (1 Squat + 1 Hang + 1 OHS)',
-          scoreType: 'weight',
-          value: '87.5 kg',
-          rpe: 9,
-          notes: 'Bloqueo sólido en overhead squat, sintiendo buena velocidad',
-          date: 'Hoy, 10:30'
-        },
-        {
-          id: 'log-demo-2',
-          userId: 'user-athlete-1',
-          zone: 'competitors',
-          workoutId: 'comp-mon-snatch-engine',
-          exerciseName: 'Metcon "Oxygen Debt"',
-          scoreType: 'time',
-          value: '16:42 RX',
-          rpe: 10,
-          notes: 'Echo bike a 68 rpm sostenido, ritmo fuerte',
-          date: 'Hoy, 11:15'
-        },
-        {
-          id: 'log-demo-3',
-          userId: 'user-athlete-2',
-          zone: 'traditional',
-          workoutId: 'gym-chest-triceps-1',
-          exerciseName: 'Press de Banca Plano con barra',
-          scoreType: 'weight',
-          value: '4 series x 8 reps con 75 kg',
-          rpe: 8,
-          notes: 'RIR 2 en todas las series, buen control en la bajada',
-          date: 'Ayer'
-        }
-      ];
-    } catch {
-      return [];
-    }
-  });
+  // Daily performance logs en memoria
+  const [performanceLogs, setPerformanceLogs] = useState([]);
 
-  // Completed exercises checklist state
-  const [completedExercises, setCompletedExercises] = useState(() => {
-    try {
-      const saved = localStorage.getItem('hift_completed_exercises');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  // Completed exercises checklist state en memoria
+  const [completedExercises, setCompletedExercises] = useState({});
 
   // Currently opened workout detail
   const [activeWorkoutDetail, setActiveWorkoutDetail] = useState(null);
 
   // Readiness / RPE Daily check-in logs
-  const getTodayKey = () => new Date().toISOString().split('T')[0];
+  const getTodayKey = () => formatLocalDate(new Date());
 
-  const [readinessLogs, setReadinessLogs] = useState(() => {
-    try {
-      const saved = localStorage.getItem('hift_readiness_logs_v1');
-      if (saved) return JSON.parse(saved);
-      const today = getTodayKey();
-      return {
-        [`${today}_user-athlete-1`]: {
-          userId: 'user-athlete-1',
-          date: today,
-          sleep: 5,
-          sleepHours: '8h',
-          sleepQualityText: 'Profundo / Recuperación total',
-          soreness: 4,
-          sorenessAreas: ['Ninguna'],
-          energy: 5,
-          energyText: 'A tope / Máxima motivación',
-          score: 92,
-          level: 'optimal',
-          deloadMode: false,
-          notes: 'Descanso de 8 horas, sin molestias articulares.',
-          isPrivate: true,
-          loggedAt: '08:15'
-        },
-        [`${today}_user-athlete-2`]: {
-          userId: 'user-athlete-2',
-          date: today,
-          sleep: 2,
-          sleepHours: '5h',
-          sleepQualityText: 'Inquieto con despertares',
-          soreness: 1,
-          sorenessAreas: ['Espalda baja / Lumbar', 'Piernas / Rodillas'],
-          energy: 2,
-          energyText: 'Poca energía / Pesadez',
-          score: 42,
-          level: 'fatigue',
-          deloadMode: true,
-          notes: 'Insomnio por turno laboral y dolor lumbar fuerte tras día de sentadillas.',
-          isPrivate: true,
-          loggedAt: '07:45'
-        },
-        [`${today}_user-athlete-3`]: {
-          userId: 'user-athlete-3',
-          date: today,
-          sleep: 4,
-          sleepHours: '7h',
-          sleepQualityText: 'Bueno / Reparador',
-          soreness: 3,
-          sorenessAreas: ['Hombros / Trapecios'],
-          energy: 3,
-          energyText: 'Energía neutra / Normal',
-          score: 75,
-          level: 'moderate',
-          deloadMode: false,
-          notes: 'Energía media, buen calentamiento requerido.',
-          isPrivate: true,
-          loggedAt: '09:00'
-        }
-      };
-    } catch {
-      return {};
-    }
-  });
+  // Readiness / RPE Daily check-in logs (cargado de forma aislada y privada por cada atleta)
+  const [readinessLogs, setReadinessLogs] = useState({});
+
+  // Sincronización inicial de catálogos generales desde Supabase
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    fetchWorkoutsFromSupabase().then(remoteWorkouts => {
+      if (remoteWorkouts && remoteWorkouts.length > 0) {
+        setWorkouts(remoteWorkouts);
+      }
+    });
+
+    fetchBoxScheduleFromSupabase().then(remoteSchedule => {
+      if (remoteSchedule && Object.keys(remoteSchedule).length > 0) {
+        setBoxWeeklySchedule(remoteSchedule);
+      }
+    });
+  }, []);
 
   // Deload mode flag for active user
   const [isDeloadMode, setIsDeloadMode] = useState(false);
@@ -293,33 +167,31 @@ export function WorkoutProvider({ children }) {
     setIsStoryModalOpen(false);
   };
 
-  const openReadinessModal = () => {
+  const openReadinessModal = useCallback(() => {
     setIsReadinessModalOpen(true);
-  };
+  }, []);
 
-  const closeReadinessModal = () => {
+  const closeReadinessModal = useCallback(() => {
     setIsReadinessModalOpen(false);
-  };
+  }, []);
 
   const saveDailyReadiness = (userId, data) => {
     const today = getTodayKey();
     const key = `${today}_${userId}`;
     const entry = {
       userId,
+      athleteId: userId,
       date: today,
       ...data,
       loggedAt: new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(new Date())
     };
 
-    setReadinessLogs(prev => {
-      const updated = { ...prev, [key]: entry };
-      try {
-        localStorage.setItem('hift_readiness_logs_v1', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
+    setReadinessLogs(prev => ({ ...prev, [key]: entry }));
+
+    // Solo persistir en Supabase si no estamos en previsualización de Coach
+    if (isSupabaseConfigured && !currentUser?.isPreviewMode) {
+      upsertReadinessLogInSupabase(key, entry);
+    }
 
     if (data.deloadMode !== undefined) {
       setIsDeloadMode(data.deloadMode);
@@ -330,6 +202,13 @@ export function WorkoutProvider({ children }) {
     if (!userId) return null;
     const today = getTodayKey();
     return readinessLogs[`${today}_${userId}`] || null;
+  };
+
+  const getAthleteReadinessHistory = (userId) => {
+    if (!userId) return [];
+    return Object.values(readinessLogs)
+      .filter(entry => entry.userId === userId)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   };
 
   const toggleDeloadMode = (userId) => {
@@ -344,66 +223,88 @@ export function WorkoutProvider({ children }) {
     }
   };
 
-  // Custom logo URL
-  const [customLogoUrl, setCustomLogoUrl] = useState(() => {
-    try {
-      return localStorage.getItem('hift_custom_logo') || null;
-    } catch {
-      return null;
-    }
-  });
+  const resetTodayReadiness = (userId) => {
+    if (!userId) return;
+    const today = getTodayKey();
+    const key = `${today}_${userId}`;
+    setReadinessLogs(prev => {
+      const updated = { ...prev };
+      delete updated[key];
+      return updated;
+    });
+    setIsDeloadMode(false);
+  };
 
-  // Clean up any stale activeZone from localStorage and reset to 'dashboard' on login
-  useEffect(() => {
-    try {
-      localStorage.removeItem('hift_active_zone_v3');
-    } catch (e) {
-      console.error(e);
-    }
+  // Custom logo URL en memoria
+  const [customLogoUrl, setCustomLogoUrl] = useState(null);
+
+  // Restablecer estado al cambiar de usuario o cerrar sesión (Prevención de fuga de datos en dispositivos compartidos - M4)
+  const [prevLoggedUserId, setPrevLoggedUserId] = useState(currentUser?.id);
+  if (currentUser?.id !== prevLoggedUserId) {
+    setPrevLoggedUserId(currentUser?.id);
     setActiveZone('dashboard');
     setActiveWorkoutDetail(null);
-  }, [currentUser?.id]);
-
-
-  // Persist workouts
-  useEffect(() => {
-    try {
-      localStorage.setItem('hift_workouts_v3', JSON.stringify(workouts));
-    } catch (e) {
-      console.error(e);
+    setCompletedExercises({});
+    setPrs([]);
+    setPerformanceLogs([]);
+    setReadinessLogs({});
+    setWeeklyAthletePlans({});
+    setIsDeloadMode(false);
+    if (!currentUser?.id) {
+      setBoxWeeklySchedule({});
+      setWorkouts(INITIAL_WORKOUTS.filter(w => w.zone === 'traditional'));
     }
-  }, [workouts]);
+  }
 
-  // Persist PRs
+  // Cargar datos privados del usuario desde Supabase ÚNICAMENTE cuando está autenticado
+  const currentUserId = currentUser?.id;
+  const isCoach = currentUser?.role === 'admin';
   useEffect(() => {
-    try {
-      localStorage.setItem('hift_prs_v3', JSON.stringify(prs));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [prs]);
+    if (!isSupabaseConfigured || !currentUserId) return;
 
-  // Persist performance logs
-  useEffect(() => {
-    try {
-      localStorage.setItem('hift_performance_logs_v1', JSON.stringify(performanceLogs));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [performanceLogs]);
+    // Si es Coach carga planes de todos los alumnos; si es atleta acota a su ID
+    fetchWeeklyPlansFromSupabase(isCoach ? null : currentUserId).then(remotePlans => {
+      if (remotePlans && Object.keys(remotePlans).length > 0) {
+        setWeeklyAthletePlans(remotePlans);
+      }
+    });
 
-  // Persist completed exercises
-  useEffect(() => {
-    try {
-      localStorage.setItem('hift_completed_exercises', JSON.stringify(completedExercises));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [completedExercises]);
+    // Minimización RGPD Art. 9: Los atletas solo descargan su propio historial de fatiga y salud
+    fetchReadinessLogsFromSupabase(isCoach ? null : currentUserId).then(remoteReadiness => {
+      if (remoteReadiness && Object.keys(remoteReadiness).length > 0) {
+        setReadinessLogs(prev => ({ ...prev, ...remoteReadiness }));
+      }
+    });
 
-  // Toggle exercise checkbox
+    fetchCompletedExercisesFromSupabase(currentUserId).then(remoteExercises => {
+      if (remoteExercises) {
+        setCompletedExercises(remoteExercises);
+      }
+    });
+
+    fetchPrsFromSupabase(currentUserId).then(remotePrs => {
+      if (remotePrs) {
+        setPrs(remotePrs);
+      }
+    });
+
+    fetchPerformanceLogsFromSupabase(currentUserId).then(remoteLogs => {
+      if (remoteLogs) {
+        setPerformanceLogs(remoteLogs);
+      }
+    });
+  }, [currentUserId, isCoach]);
+
+  // Toggle exercise checkbox y sincronizar en Supabase (sin localStorage)
   const toggleExercise = (key) => {
-    setCompletedExercises(prev => ({ ...prev, [key]: !prev[key] }));
+    setCompletedExercises(prev => {
+      const nextVal = !prev[key];
+      const updated = { ...prev, [key]: nextVal };
+      if (isSupabaseConfigured && currentUser?.id && !currentUser?.isPreviewMode) {
+        upsertCompletedExerciseInSupabase(currentUser.id, key, nextVal);
+      }
+      return updated;
+    });
   };
 
   const celebrateCompletion = () => {
@@ -418,11 +319,21 @@ export function WorkoutProvider({ children }) {
   // Add new workout
   const addWorkout = (workoutData) => {
     setWorkouts(prev => [workoutData, ...prev]);
+    if (isSupabaseConfigured) {
+      upsertWorkoutInSupabase(workoutData);
+    }
   };
 
   // Update existing workout
   const updateWorkout = (id, updatedData) => {
-    setWorkouts(prev => prev.map(w => w.id === id ? { ...w, ...updatedData } : w));
+    setWorkouts(prev => {
+      const next = prev.map(w => w.id === id ? { ...w, ...updatedData } : w);
+      if (isSupabaseConfigured) {
+        const item = next.find(w => w.id === id);
+        if (item) upsertWorkoutInSupabase(item);
+      }
+      return next;
+    });
     if (activeWorkoutDetail && activeWorkoutDetail.id === id) {
       setActiveWorkoutDetail(prev => ({ ...prev, ...updatedData }));
     }
@@ -433,6 +344,9 @@ export function WorkoutProvider({ children }) {
     setWorkouts(prev => prev.filter(w => w.id !== id));
     if (activeWorkoutDetail && activeWorkoutDetail.id === id) {
       setActiveWorkoutDetail(null);
+    }
+    if (isSupabaseConfigured) {
+      deleteWorkoutFromSupabase(id);
     }
   };
 
@@ -452,6 +366,9 @@ export function WorkoutProvider({ children }) {
         }
       };
     });
+    if (isSupabaseConfigured) {
+      saveWeeklyPlanInSupabase(athleteId, weekKey, dayId, workoutId);
+    }
   };
 
   // Copiar la programación de una semana entera de un alumno a otra semana
@@ -482,6 +399,9 @@ export function WorkoutProvider({ children }) {
         }
       };
     });
+    if (isSupabaseConfigured) {
+      saveBoxScheduleInSupabase(weekKey, dayId, workoutId);
+    }
   };
 
   // Copiar la programación de competidores de una semana a otra
@@ -504,51 +424,61 @@ export function WorkoutProvider({ children }) {
     celebrateCompletion();
   };
 
-  // Add PR
+  // Add PR con ID criptoseguro
   const addPr = (newPr) => {
     const item = {
-      id: `pr-${Date.now()}`,
+      id: generateSecureId('pr'),
       date: new Date().toLocaleDateString('es-ES'),
       ...newPr
     };
     setPrs(prev => [item, ...prev]);
+    if (isSupabaseConfigured && currentUser?.id && !currentUser?.isPreviewMode) {
+      upsertPrInSupabase(item, currentUser.id);
+    }
     celebrateCompletion();
   };
 
   // Delete PR
   const deletePr = (id) => {
+    if (currentUser?.isPreviewMode) return;
     setPrs(prev => prev.filter(p => p.id !== id));
+    if (isSupabaseConfigured) {
+      deletePrFromSupabase(id);
+    }
   };
 
-  // Add Performance Log
+  // Add Performance Log con ID criptoseguro y fecha ISO
   const addPerformanceLog = (logData) => {
     const newLog = {
-      id: `log-${Date.now()}`,
+      id: generateSecureId('log'),
       userId: currentUser?.id || 'anonymous',
-      date: 'Hoy, ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      athlete_id: currentUser?.id || null,
+      date: new Date().toISOString(),
       ...logData
     };
     setPerformanceLogs(prev => [newLog, ...prev]);
+    if (isSupabaseConfigured && currentUser?.id && !currentUser?.isPreviewMode) {
+      upsertPerformanceLogInSupabase(newLog, currentUser.id);
+    }
     celebrateCompletion();
     return newLog;
   };
 
   // Delete Performance Log
   const deletePerformanceLog = (id) => {
+    if (currentUser?.isPreviewMode) return;
     setPerformanceLogs(prev => prev.filter(l => l.id !== id));
-  };
-
-  // Update custom logo
-  const updateCustomLogo = (dataUrl) => {
-    setCustomLogoUrl(dataUrl);
-    if (dataUrl) {
-      localStorage.setItem('hift_custom_logo', dataUrl);
-    } else {
-      localStorage.removeItem('hift_custom_logo');
+    if (isSupabaseConfigured) {
+      deletePerformanceLogFromSupabase(id);
     }
   };
 
-  // Reset to default workouts and plans
+  // Update custom logo (en memoria)
+  const updateCustomLogo = (dataUrl) => {
+    setCustomLogoUrl(dataUrl);
+  };
+
+  // Reset to default workouts and plans (en memoria)
   const resetToDefaults = () => {
     setWorkouts(INITIAL_WORKOUTS);
     setWeeklyAthletePlans({});
@@ -556,13 +486,6 @@ export function WorkoutProvider({ children }) {
     setPrs(INITIAL_PRS);
     setPerformanceLogs([]);
     setCompletedExercises({});
-    localStorage.removeItem('hift_workouts_v3');
-    localStorage.removeItem('hift_athlete_plans_v2');
-    localStorage.removeItem('hift_weekly_athlete_plans_v1');
-    localStorage.removeItem('hift_box_weekly_schedule_v1');
-    localStorage.removeItem('hift_prs_v3');
-    localStorage.removeItem('hift_performance_logs_v1');
-    localStorage.removeItem('hift_completed_exercises');
   };
 
   // Active athlete id
@@ -644,10 +567,16 @@ export function WorkoutProvider({ children }) {
       customLogoUrl,
       updateCustomLogo,
       resetToDefaults,
+      // Supabase Cloud helpers
+      isSupabaseConfigured,
+      testSupabaseConnection,
+      syncSeedDataToSupabase,
       // Readiness / RPE Daily check-in
       readinessLogs,
       saveDailyReadiness,
       getTodayReadiness,
+      resetTodayReadiness,
+      getAthleteReadinessHistory,
       isDeloadMode,
       toggleDeloadMode,
       // Global Modals

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Mail, UserPlus, Check, Copy, Send, Sparkles, Flame, Dumbbell } from 'lucide-react';
+import { X, Mail, UserPlus, Check, Send, Flame, Dumbbell } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import confetti from 'canvas-confetti';
 
@@ -10,46 +10,45 @@ export default function InviteAthleteModal({ isOpen, onClose }) {
   const [email, setEmail] = useState('');
   const [zone, setZone] = useState('traditional'); // 'competitors' | 'traditional'
   const [focus, setFocus] = useState('Hipertrofia & Fuerza');
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   // Success state when created
   const [createdAthlete, setCreatedAthlete] = useState(null);
-  const [copied, setCopied] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim() || !email.trim()) return;
 
-    const newAthlete = addAthlete(name.trim(), email.trim(), zone, focus);
-    setCreatedAthlete(newAthlete);
-    confetti({
-      particleCount: 70,
-      spread: 60,
-      origin: { y: 0.6 }
-    });
-  };
-
-  const handleCopyLink = () => {
-    if (!createdAthlete) return;
-    const link = createdAthlete.inviteLink || `${window.location.origin}/?invite=${createdAthlete.id}`;
-    navigator.clipboard.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
-  };
-
-  const handleSendEmailSimulation = () => {
-    setEmailSent(true);
-    setTimeout(() => setEmailSent(false), 3000);
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      const newAthlete = await addAthlete(
+        name.trim(), 
+        email.trim(), 
+        zone, 
+        focus
+      );
+      setCreatedAthlete(newAthlete);
+      confetti({
+        particleCount: 70,
+        spread: 60,
+        origin: { y: 0.6 }
+      });
+    } catch (err) {
+      setErrorMsg(err.message || 'Error al enviar la invitación al cliente.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleResetAndClose = () => {
     setName('');
     setEmail('');
+    setErrorMsg(null);
     setCreatedAthlete(null);
-    setCopied(false);
-    setEmailSent(false);
     onClose();
   };
 
@@ -261,23 +260,41 @@ export default function InviteAthleteModal({ isOpen, onClose }) {
               />
             </div>
 
+            {/* Error Message */}
+            {errorMsg && (
+              <div style={{
+                padding: '9px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                color: '#ef4444',
+                fontSize: '12px',
+                fontWeight: '600'
+              }}>
+                {errorMsg}
+              </div>
+            )}
+
             {/* Submit Button */}
             <button
               type="submit"
+              disabled={isLoading}
               className="btn-primary"
               style={{
                 padding: '12px',
                 fontSize: '13px',
                 borderRadius: 'var(--radius-sm)',
-                marginTop: '6px'
+                marginTop: '6px',
+                opacity: isLoading ? 0.7 : 1,
+                cursor: isLoading ? 'not-allowed' : 'pointer'
               }}
             >
               <Send size={15} />
-              <span>Dar de Alta y Generar Enlace</span>
+              <span>{isLoading ? 'Enviando invitación oficial...' : 'Enviar Invitación Segura por Email'}</span>
             </button>
           </form>
         ) : (
-          /* Confirmation and Invite Link Screen */
+          /* Confirmation Screen */
           <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{
               background: 'rgba(34, 197, 94, 0.12)',
@@ -291,105 +308,53 @@ export default function InviteAthleteModal({ isOpen, onClose }) {
               <Check size={20} color="#22c55e" style={{ flexShrink: 0 }} />
               <div>
                 <strong style={{ fontSize: '13px', color: '#ffffff', display: 'block' }}>
-                  ¡Alta de cliente generada con éxito!
+                  ¡Invitación enviada con éxito!
                 </strong>
                 <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
-                  Se ha registrado a <strong>{createdAthlete.name}</strong> ({createdAthlete.email}).
+                  Se ha generado el acceso de <strong>{createdAthlete.name}</strong>.
                 </span>
               </div>
             </div>
 
-            {/* Invite Link Card */}
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                ENLACE PERSONALIZADO DE ACCESO PARA EL ALUMNO:
-              </label>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '10px 12px'
-              }}>
-                <input
-                  type="text"
-                  readOnly
-                  value={createdAthlete.inviteLink || `${window.location.origin}/?invite=${createdAthlete.id}`}
-                  style={{
-                    width: '100%',
-                    background: 'none',
-                    border: 'none',
-                    fontSize: '12px',
-                    color: 'var(--brand-lilac-light)',
-                    outline: 'none',
-                    fontWeight: '700'
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  style={{
-                    background: copied ? '#22c55e' : 'var(--brand-gradient)',
-                    border: 'none',
-                    borderRadius: 'var(--radius-xs)',
-                    padding: '6px 10px',
-                    color: '#ffffff',
-                    fontSize: '11px',
-                    fontWeight: '800',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    flexShrink: 0
-                  }}
-                >
-                  {copied ? <Check size={12} /> : <Copy size={12} />}
-                  <span>{copied ? '¡Copiado!' : 'Copiar'}</span>
-                </button>
+            {/* Information Card */}
+            <div style={{
+              background: 'var(--bg-surface)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-subtle)',
+              padding: '12px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--brand-lilac-light)', textTransform: 'uppercase' }}>
+                Detalles del alta:
+              </span>
+              <div style={{ fontSize: '12px', color: '#ffffff', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Correo invitado:</span>
+                <strong>{createdAthlete.email}</strong>
               </div>
+              <div style={{ fontSize: '12px', color: '#ffffff', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Membresía asignada:</span>
+                <strong style={{ color: 'var(--brand-pink)' }}>{createdAthlete.membership}</strong>
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: '1.4' }}>
+                🔒 <em>El atleta ha recibido un enlace criptográfico en su correo para activar su cuenta y definir su propia contraseña de forma segura.</em>
+              </p>
             </div>
 
-            {/* Email simulation alert */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={handleSendEmailSimulation}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: emailSent ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-surface)',
-                  border: emailSent ? '1px solid #22c55e' : '1px solid var(--border-subtle)',
-                  color: emailSent ? '#22c55e' : '#ffffff',
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px'
-                }}
-              >
-                <Mail size={14} />
-                <span>{emailSent ? '✓ Correo simulado enviado a ' + createdAthlete.email : 'Simular envío de email automático'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleResetAndClose}
-                className="btn-primary"
-                style={{
-                  width: '100%',
-                  padding: '11px',
-                  fontSize: '12.5px',
-                  borderRadius: 'var(--radius-sm)'
-                }}
-              >
-                Listo / Finalizar
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleResetAndClose}
+              className="btn-primary"
+              style={{
+                width: '100%',
+                padding: '11px',
+                fontSize: '12.5px',
+                borderRadius: 'var(--radius-sm)'
+              }}
+            >
+              Listo / Finalizar
+            </button>
           </div>
         )}
       </div>

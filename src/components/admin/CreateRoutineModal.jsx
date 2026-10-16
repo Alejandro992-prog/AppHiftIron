@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Plus, Trash2, Dumbbell, Flame, Check } from 'lucide-react';
 import { useWorkouts } from '../../context/WorkoutContext';
 import { DAYS_OF_WEEK, MUSCLE_GROUPS } from '../../data/initialWorkouts';
+import { generateSecureId } from '../../utils/validators';
 
 export default function CreateRoutineModal({ isOpen, onClose, defaultZone = 'traditional' }) {
   const { addWorkout, celebrateCompletion } = useWorkouts();
@@ -11,7 +12,7 @@ export default function CreateRoutineModal({ isOpen, onClose, defaultZone = 'tra
   const [dayId, setDayId] = useState('mon');
   const [muscleGroup, setMuscleGroup] = useState('full_body');
   const [duration, setDuration] = useState('50 MIN');
-  const [level, setLevel] = useState('Intermedio / Avanzado');
+  const level = 'Intermedio / Avanzado';
   const [description, setDescription] = useState('');
 
   // Structured blocks
@@ -37,36 +38,43 @@ export default function CreateRoutineModal({ isOpen, onClose, defaultZone = 'tra
 
   if (!isOpen) return null;
 
-  // Add exercise to section
+  // Add exercise to section (inmutable)
   const handleAddExercise = (sectionIndex) => {
-    setSections(prev => {
-      const updated = [...prev];
-      updated[sectionIndex].exercises.push({
-        name: '',
-        sets: '3 series',
-        reps: '10-12 reps',
-        notes: ''
-      });
-      return updated;
-    });
+    setSections(prev => prev.map((sec, sIdx) => {
+      if (sIdx !== sectionIndex) return sec;
+      return {
+        ...sec,
+        exercises: [
+          ...sec.exercises,
+          { name: '', sets: '3 series', reps: '10-12 reps', notes: '' }
+        ]
+      };
+    }));
   };
 
-  // Remove exercise from section
+  // Remove exercise from section (inmutable)
   const handleRemoveExercise = (sectionIndex, exerciseIndex) => {
-    setSections(prev => {
-      const updated = [...prev];
-      updated[sectionIndex].exercises.splice(exerciseIndex, 1);
-      return updated;
-    });
+    setSections(prev => prev.map((sec, sIdx) => {
+      if (sIdx !== sectionIndex) return sec;
+      return {
+        ...sec,
+        exercises: sec.exercises.filter((_, eIdx) => eIdx !== exerciseIndex)
+      };
+    }));
   };
 
-  // Update exercise field
+  // Update exercise field (inmutable)
   const handleExerciseChange = (sectionIndex, exerciseIndex, field, value) => {
-    setSections(prev => {
-      const updated = [...prev];
-      updated[sectionIndex].exercises[exerciseIndex][field] = value;
-      return updated;
-    });
+    setSections(prev => prev.map((sec, sIdx) => {
+      if (sIdx !== sectionIndex) return sec;
+      return {
+        ...sec,
+        exercises: sec.exercises.map((ex, eIdx) => {
+          if (eIdx !== exerciseIndex) return ex;
+          return { ...ex, [field]: value };
+        })
+      };
+    }));
   };
 
   // Add a new section block
@@ -88,13 +96,12 @@ export default function CreateRoutineModal({ isOpen, onClose, defaultZone = 'tra
     setSections(prev => prev.filter((_, idx) => idx !== sectionIndex));
   };
 
-  // Update section name
+  // Update section name (inmutable)
   const handleSectionNameChange = (sectionIndex, newName) => {
-    setSections(prev => {
-      const updated = [...prev];
-      updated[sectionIndex].name = newName;
-      return updated;
-    });
+    setSections(prev => prev.map((sec, sIdx) => {
+      if (sIdx !== sectionIndex) return sec;
+      return { ...sec, name: newName };
+    }));
   };
 
   const handleSubmit = (e) => {
@@ -102,7 +109,7 @@ export default function CreateRoutineModal({ isOpen, onClose, defaultZone = 'tra
     if (!title.trim()) return;
 
     const newWorkout = {
-      id: `manual-workout-${Date.now()}`,
+      id: generateSecureId('wod'),
       zone,
       dayId,
       muscleGroup: zone === 'traditional' ? muscleGroup : 'crossfit_wod',

@@ -16,6 +16,14 @@ export default function PerformanceModal({
   const [rpe, setRpe] = useState('8');
   const [notes, setNotes] = useState('');
 
+  const [prevExercise, setPrevExercise] = useState(initialExerciseName);
+  if (initialExerciseName !== prevExercise) {
+    setPrevExercise(initialExerciseName);
+    setExerciseName(initialExerciseName || '');
+    setValue('');
+    setNotes('');
+  }
+
   if (!isOpen) return null;
 
   const handleSubmit = (e) => {

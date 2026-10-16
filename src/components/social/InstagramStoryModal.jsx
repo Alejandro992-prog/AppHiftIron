@@ -1,22 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Download, Share2, Sparkles, Trophy, Flame, CheckCircle, Camera, Palette, RefreshCw } from 'lucide-react';
+import { X, Download, Share2, Camera } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useWorkouts } from '../../context/WorkoutContext';
 
 export default function InstagramStoryModal({ isOpen, onClose, workoutData = {} }) {
   const { currentUser } = useAuth();
-  const { customLogoUrl } = useWorkouts();
 
   // Canvas ref for exporting high-res 1080x1920 story
   const canvasRef = useRef(null);
 
   // Customization state
   const [athleteScore, setAthleteScore] = useState(workoutData.score || '14:25 RX');
-  const [athleteNote, setAthleteNote] = useState(workoutData.note || '¡WOD finalizado con intensidad máxima!');
+  const [athleteNote, setAthleteNote] = useState(workoutData.notes || 'Superando límites en HIFT Iron Box.');
   const [selectedTheme, setSelectedTheme] = useState('neon_dark'); // 'neon_dark' | 'titanium_carbon' | 'royal_violet'
   const [selectedBadge, setSelectedBadge] = useState('rx_crushed'); // 'rx_crushed' | 'pr_broken' | 'beast_mode'
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isCopied, setIsCopied] = useState(false);
 
   // Workout details
   const workoutTitle = workoutData.title || 'Snatch Wave & Gymnastic Density';
@@ -282,14 +279,20 @@ export default function InstagramStoryModal({ isOpen, onClose, workoutData = {} 
     ctx.fillText(line.trim(), x, currentY);
   }
 
+  const renderStoryCanvasRef = useRef(renderStoryCanvas);
+  useEffect(() => {
+    renderStoryCanvasRef.current = renderStoryCanvas;
+  });
+
   // Re-render canvas whenever options change
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => {
-        renderStoryCanvas();
+      const timer = setTimeout(() => {
+        renderStoryCanvasRef.current();
       }, 50);
+      return () => clearTimeout(timer);
     }
-  }, [isOpen, athleteScore, athleteNote, selectedTheme, selectedBadge, workoutData]);
+  }, [isOpen, athleteScore, selectedTheme, selectedBadge, workoutData]);
 
   // Download Story as High-Res PNG (1080x1920)
   const handleDownloadImage = () => {
@@ -315,28 +318,38 @@ export default function InstagramStoryModal({ isOpen, onClose, workoutData = {} 
 
     setIsGenerating(true);
     try {
-      canvas.toBlob(async (blob) => {
-        if (!blob) {
-          handleDownloadImage();
-          return;
-        }
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 1.0));
+      if (!blob) {
+        handleDownloadImage();
+        return;
+      }
 
-        const file = new File([blob], 'HIFT_Iron_Box_Story.png', { type: 'image/png' });
+      const file = new File([blob], 'HIFT_Iron_Box_Story.png', { type: 'image/png' });
 
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
           await navigator.share({
             title: `HIFT Iron Box - ${workoutTitle}`,
             text: `¡Entrenamiento completado en HIFT Iron Box! Marca: ${athleteScore}`,
             files: [file]
           });
-        } else {
-          // Fallback: download image directly
+        } catch (shareErr) {
+          // Si el usuario simplemente canceló la hoja de compartir nativa, respetar su decisión sin forzar descarga
+          if (shareErr.name === 'AbortError') {
+            return;
+          }
+          console.warn('Share error, falling back to download', shareErr);
           handleDownloadImage();
         }
-      }, 'image/png', 1.0);
+      } else {
+        // Fallback: descarga directa de la imagen
+        handleDownloadImage();
+      }
     } catch (err) {
-      console.warn('Share not supported, falling back to download', err);
-      handleDownloadImage();
+      if (err.name !== 'AbortError') {
+        console.warn('Share not supported, falling back to download', err);
+        handleDownloadImage();
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -467,6 +480,29 @@ export default function InstagramStoryModal({ isOpen, onClose, workoutData = {} 
                 borderRadius: 'var(--radius-sm)',
                 fontSize: '14px',
                 fontWeight: '800',
+                outline: 'none'
+              }}
+            />
+          </div>
+
+          {/* Motivational Note */}
+          <div>
+            <label style={{ fontSize: '10.5px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px', display: 'block' }}>
+              Frase motivacional o nota
+            </label>
+            <input
+              type="text"
+              value={athleteNote}
+              onChange={(e) => setAthleteNote(e.target.value)}
+              placeholder="ej: Superando límites en HIFT Iron Box."
+              style={{
+                width: '100%',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                color: '#ffffff',
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '13px',
                 outline: 'none'
               }}
             />

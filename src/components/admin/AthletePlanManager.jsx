@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
-import { User, Plus, Calendar, Check, Eye } from 'lucide-react';
+import { Plus, Calendar, Eye } from 'lucide-react';
 import WeekNavigator from '../shared/WeekNavigator';
 import { getWeekDays, shiftWeekKey } from '../../utils/weekManager';
+import InviteAthleteModal from './InviteAthleteModal';
 
 export default function AthletePlanManager({ onNavigateToRoutine }) {
-  const { athletes, addAthlete, loginAsAthlete } = useAuth();
+  const { athletes, loginAsAthlete } = useAuth();
   const { 
     workouts, 
     weeklyAthletePlans,
@@ -20,9 +21,7 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
     setSelectedDay
   } = useWorkouts();
 
-  const [showAddAthleteModal, setShowAddAthleteModal] = useState(false);
-  const [newAthleteName, setNewAthleteName] = useState('');
-  const [newAthleteFocus, setNewAthleteFocus] = useState('Musculación General');
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   // Currently managed athlete object
   const currentAthlete = athletes.find(a => a.id === managingAthleteId) || athletes[0];
@@ -30,23 +29,15 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
   // Plan de la semana actualmente seleccionada para el alumno
   const currentPlan = (weeklyAthletePlans[currentAthlete?.id] && weeklyAthletePlans[currentAthlete?.id][selectedWeek]) || {};
 
-  const handleAddAthleteSubmit = (e) => {
-    e.preventDefault();
-    if (!newAthleteName.trim()) return;
-
-    const created = addAthlete(newAthleteName, '', newAthleteFocus);
-    setManagingAthleteId(created.id);
-    setNewAthleteName('');
-    setShowAddAthleteModal(false);
-  };
-
   const handlePreviewAsAthlete = (dayId) => {
+    if (!currentAthlete?.id) return;
     loginAsAthlete(currentAthlete.id);
     setViewMode('coach_plan');
     setSelectedDay(dayId || 'mon');
   };
 
   const handleCopyWeek = () => {
+    if (!currentAthlete?.id) return;
     const nextWeekKey = shiftWeekKey(selectedWeek, 1);
     copyAthleteWeekPlan(currentAthlete.id, selectedWeek, nextWeekKey);
   };
@@ -71,7 +62,7 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
           </span>
 
           <button
-            onClick={() => setShowAddAthleteModal(true)}
+            onClick={() => setShowInviteModal(true)}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -178,34 +169,59 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
       />
 
       {/* Weekly Plan Matrix for the Selected Athlete */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-          <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff' }}>
-            Plan de {currentAthlete?.name} para esta semana
+      {!currentAthlete ? (
+        <div style={{
+          background: 'var(--bg-secondary)',
+          borderRadius: 'var(--radius-md)',
+          padding: '28px 16px',
+          textAlign: 'center',
+          border: '1px dashed var(--border-medium)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+            Aún no tienes alumnos registrados en el Box.
           </span>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-            Semana: {selectedWeek}
-          </span>
+          <button
+            onClick={() => setShowInviteModal(true)}
+            className="btn-primary"
+            style={{ fontSize: '12px', padding: '8px 16px' }}
+          >
+            <Plus size={14} />
+            <span>Dar de alta al primer alumno</span>
+          </button>
         </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+            <span style={{ fontSize: '12px', fontWeight: '800', color: '#ffffff' }}>
+              Plan de {currentAthlete.name} para esta semana
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              Semana: {selectedWeek}
+            </span>
+          </div>
 
-        {weekDays.map(day => {
-          const assignedId = currentPlan[day.id];
-          const assignedWorkout = workouts.find(w => w.id === assignedId);
+          {weekDays.map(day => {
+            const assignedId = currentPlan[day.id];
+            const assignedWorkout = workouts.find(w => w.id === assignedId);
 
-          return (
-            <div
-              key={day.id}
-              style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '10px 14px',
-                border: '1px solid var(--border-subtle)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px'
-              }}
-            >
+            return (
+              <div
+                key={day.id}
+                style={{
+                  background: 'var(--bg-secondary)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 14px',
+                  border: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px'
+                }}
+              >
               {/* Day Label con Fecha Real */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '110px' }}>
                 <Calendar size={14} color="var(--brand-lilac-light)" />
@@ -269,124 +285,13 @@ export default function AthletePlanManager({ onNavigateToRoutine }) {
           );
         })}
       </div>
+    )}
 
-      {/* Add Athlete Modal */}
-      {showAddAthleteModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: 'var(--bg-surface-elevated)',
-            borderRadius: 'var(--radius-md)',
-            padding: '20px',
-            width: '100%',
-            maxWidth: '360px',
-            border: '1px solid var(--border-subtle)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '14px'
-          }}>
-            <span style={{ fontSize: '15px', fontWeight: '800', color: '#ffffff' }}>
-              Registrar Nuevo Alumno
-            </span>
-
-            <form onSubmit={handleAddAthleteSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                  Nombre y Apellidos
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ej. Sofía Navarro"
-                  value={newAthleteName}
-                  onChange={(e) => setNewAthleteName(e.target.value)}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: 'var(--radius-xs)',
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#ffffff',
-                    fontSize: '13px'
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                  Enfoque / Objetivo
-                </label>
-                <select
-                  value={newAthleteFocus}
-                  onChange={(e) => setNewAthleteFocus(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: 'var(--radius-xs)',
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#ffffff',
-                    fontSize: '13px'
-                  }}
-                >
-                  <option value="Musculación General">Musculación General</option>
-                  <option value="Hipertrofia Pierna & Glúteo">Hipertrofia Pierna & Glúteo</option>
-                  <option value="Fuerza & Levantamiento">Fuerza & Levantamiento</option>
-                  <option value="Acondicionamiento Físico">Acondicionamiento Físico</option>
-                  <option value="Pérdida de Grasa">Pérdida de Grasa</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowAddAthleteModal(false)}
-                  style={{
-                    flex: 1,
-                    padding: '10px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--bg-surface)',
-                    border: '1px solid var(--border-subtle)',
-                    color: 'var(--text-secondary)',
-                    fontSize: '12px',
-                    fontWeight: '700',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  style={{
-                    flex: 1,
-                    padding: '10px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--brand-gradient)',
-                    border: 'none',
-                    color: '#ffffff',
-                    fontSize: '12px',
-                    fontWeight: '700',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Guardar Alumno
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Modal Seguro de Alta con Entrega de Credenciales */}
+      <InviteAthleteModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+      />
     </div>
   );
 }

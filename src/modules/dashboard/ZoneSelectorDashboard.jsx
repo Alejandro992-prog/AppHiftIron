@@ -3,20 +3,16 @@ import {
   Flame, 
   Dumbbell, 
   ArrowRight, 
-  Lock, 
-  CheckCircle, 
-  Zap,
   Sparkles,
   Percent,
-  Camera,
-  Activity
+  Camera
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
 import ReadinessBanner from '../../components/readiness/ReadinessBanner';
 
 export default function ZoneSelectorDashboard() {
-  const { currentUser, canAccessZone, isAdmin } = useAuth();
+  const { currentUser, canAccessZone } = useAuth();
   const { 
     setActiveZone, 
     openPercentageCalc, 

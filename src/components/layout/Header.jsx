@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import BrandLogo from '../common/BrandLogo';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkouts } from '../../context/WorkoutContext';
-import { LogOut, Shield } from 'lucide-react';
+import { LogOut, Shield, Database } from 'lucide-react';
+import SupabaseSyncModal from '../admin/SupabaseSyncModal';
 
 export default function Header({ onOpenPrivacy }) {
   const { currentUser, isAdmin, logout } = useAuth();
-  const { customLogoUrl, activeZone, setActiveZone, setActiveWorkoutDetail } = useWorkouts();
+  const { customLogoUrl, activeZone, setActiveZone, setActiveWorkoutDetail, isSupabaseConfigured } = useWorkouts();
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
 
   const handleReturnToHub = () => {
     setActiveWorkoutDetail(null);
@@ -93,25 +95,27 @@ export default function Header({ onOpenPrivacy }) {
           </span>
         </div>
 
-        {/* Privacy & RGPD Rights Button */}
-        {onOpenPrivacy && (
+        {/* Supabase Cloud Indicator (Solo visible para Head Coach / Admin) */}
+        {isAdmin && (
           <button
-            onClick={onOpenPrivacy}
-            title="Gestión de Privacidad y Derechos RGPD"
+            onClick={() => setIsSupabaseModalOpen(true)}
+            title={isSupabaseConfigured ? "Supabase Conectado (Nube)" : "Configurar Supabase (Modo local)"}
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: 'var(--radius-sm)',
-              background: 'rgba(34, 197, 94, 0.1)',
-              border: '1px solid rgba(34, 197, 94, 0.3)',
-              color: '#22c55e',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
+              gap: '4px',
+              padding: '4px 8px',
+              borderRadius: 'var(--radius-full)',
+              background: isSupabaseConfigured ? 'rgba(62, 207, 142, 0.15)' : 'rgba(249, 115, 22, 0.12)',
+              border: isSupabaseConfigured ? '1px solid rgba(62, 207, 142, 0.35)' : '1px solid rgba(249, 115, 22, 0.3)',
+              color: isSupabaseConfigured ? '#3ECF8E' : '#f97316',
+              fontSize: '10px',
+              fontWeight: '800',
               cursor: 'pointer'
             }}
           >
-            <Shield size={15} />
+            <Database size={12} />
+            <span>{isSupabaseConfigured ? 'Cloud' : 'Local'}</span>
           </button>
         )}
 
@@ -135,6 +139,11 @@ export default function Header({ onOpenPrivacy }) {
           <LogOut size={15} />
         </button>
       </div>
+
+      <SupabaseSyncModal 
+        isOpen={isSupabaseModalOpen} 
+        onClose={() => setIsSupabaseModalOpen(false)} 
+      />
     </header>
   );
 }
