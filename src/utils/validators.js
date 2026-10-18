@@ -3,7 +3,9 @@ import {
   PrPayloadSchema,
   PerformanceLogPayloadSchema,
   ReadinessLogPayloadSchema,
-  WorkoutPayloadSchema
+  WorkoutPayloadSchema,
+  CompletedExercisePayloadSchema,
+  UserConsentsPayloadSchema
 } from './schemas';
 
 export const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -30,9 +32,9 @@ export function sanitizeText(input, maxLength = 255) {
 }
 
 /**
- * Generador criptográficamente seguro de contraseñas temporales
+ * Generador criptográficamente seguro de contraseñas temporales con alta entropía
  */
-export function generateSecureTemporaryPassword(length = 10) {
+export function generateSecureTemporaryPassword(length = 16) {
   const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
   const array = new Uint8Array(length);
   if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
@@ -44,7 +46,7 @@ export function generateSecureTemporaryPassword(length = 10) {
     }
   }
 
-  let password = 'Hift!';
+  let password = '';
   for (let i = 0; i < length; i++) {
     password += charset[array[i] % charset.length];
   }
@@ -336,5 +338,56 @@ export function validateAthletePayload(athlete) {
     updated_at: new Date().toISOString()
   };
 }
+
+/**
+ * Validador para ejercicios completados con Zod
+ */
+export function validateCompletedExercisePayload(athleteId, exerciseKey, isCompleted) {
+  if (!isValidUuid(athleteId)) {
+    throw new Error('Identificador de atleta no válido.');
+  }
+
+  const cleanKey = sanitizeText(exerciseKey, 200);
+  const raw = {
+    id: `${athleteId}_${cleanKey}`,
+    athlete_id: athleteId,
+    exercise_key: cleanKey,
+    completed: Boolean(isCompleted),
+    updated_at: new Date().toISOString()
+  };
+
+  const parsed = CompletedExercisePayloadSchema.safeParse(raw);
+  if (!parsed.success) {
+    const errorMsg = parsed.error.issues[0]?.message || 'Datos de ejercicio completado no válidos.';
+    throw new Error(errorMsg);
+  }
+  return parsed.data;
+}
+
+/**
+ * Validador para consentimientos de usuario RGPD con Zod
+ */
+export function validateUserConsentsPayload(athleteId, consents) {
+  if (!isValidUuid(athleteId)) {
+    throw new Error('Identificador de atleta no válido.');
+  }
+
+  const raw = {
+    athlete_id: athleteId,
+    terms: consents?.terms ?? true,
+    health_readiness: Boolean(consents?.health_readiness),
+    leaderboard: Boolean(consents?.leaderboard),
+    policy_version: sanitizeText(consents?.policyVersion || consents?.policy_version || 'v1.0_2026_ES', 50),
+    updated_at: new Date().toISOString()
+  };
+
+  const parsed = UserConsentsPayloadSchema.safeParse(raw);
+  if (!parsed.success) {
+    const errorMsg = parsed.error.issues[0]?.message || 'Datos de consentimientos no válidos.';
+    throw new Error(errorMsg);
+  }
+  return parsed.data;
+}
+
 
 

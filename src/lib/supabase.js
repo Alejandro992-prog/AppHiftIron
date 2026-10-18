@@ -40,15 +40,3 @@ export const supabase = isSupabaseConfigured
     })
   : null;
 
-// Cliente secundario efímero (sin persistencia de sesión) para dar de alta
-// atletas desde el panel de Coach sin cerrar ni interferir con la sesión del Coach activo
-export function createEphemeralClient() {
-  if (!isSupabaseConfigured) return null;
-  return createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false
-    }
-  });
-}

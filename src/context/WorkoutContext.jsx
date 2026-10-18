@@ -25,7 +25,7 @@ import {
   syncSeedDataToSupabase,
   testSupabaseConnection
 } from '../services/supabaseService';
-import { generateSecureId } from '../utils/validators';
+import { generateSecureId, safeLogger } from '../utils/validators';
 
 const WorkoutContext = createContext();
 
@@ -316,16 +316,26 @@ export function WorkoutProvider({ children }) {
     });
   };
 
-  // Add new workout
+  // Add new workout (exclusivo Head Coach)
+  const isCoachAdmin = currentUser?.role === 'admin' && !currentUser?.isPreviewMode;
+
   const addWorkout = (workoutData) => {
+    if (!isCoachAdmin) {
+      safeLogger.warn('Violación de autorización: Solo el Head Coach puede añadir rutinas al catálogo.');
+      return;
+    }
     setWorkouts(prev => [workoutData, ...prev]);
     if (isSupabaseConfigured) {
       upsertWorkoutInSupabase(workoutData);
     }
   };
 
-  // Update existing workout
+  // Update existing workout (exclusivo Head Coach)
   const updateWorkout = (id, updatedData) => {
+    if (!isCoachAdmin) {
+      safeLogger.warn('Violación de autorización: Solo el Head Coach puede editar rutinas del catálogo.');
+      return;
+    }
     setWorkouts(prev => {
       const next = prev.map(w => w.id === id ? { ...w, ...updatedData } : w);
       if (isSupabaseConfigured) {
@@ -339,8 +349,12 @@ export function WorkoutProvider({ children }) {
     }
   };
 
-  // Delete workout
+  // Delete workout (exclusivo Head Coach)
   const deleteWorkout = (id) => {
+    if (!isCoachAdmin) {
+      safeLogger.warn('Violación de autorización: Solo el Head Coach puede eliminar rutinas del catálogo.');
+      return;
+    }
     setWorkouts(prev => prev.filter(w => w.id !== id));
     if (activeWorkoutDetail && activeWorkoutDetail.id === id) {
       setActiveWorkoutDetail(null);
@@ -350,8 +364,12 @@ export function WorkoutProvider({ children }) {
     }
   };
 
-  // Asignar rutina a un alumno para un día y semana específicos
+  // Asignar rutina a un alumno para un día y semana específicos (exclusivo Head Coach)
   const assignWorkoutToAthleteDay = (athleteId, dayId, workoutId, weekKey = selectedWeek) => {
+    if (!isCoachAdmin) {
+      safeLogger.warn('Violación de autorización: Solo el Head Coach puede programar rutinas para alumnos.');
+      return;
+    }
     setWeeklyAthletePlans(prev => {
       const athleteWeeks = prev[athleteId] || {};
       const targetWeek = athleteWeeks[weekKey] || {};
@@ -371,8 +389,12 @@ export function WorkoutProvider({ children }) {
     }
   };
 
-  // Copiar la programación de una semana entera de un alumno a otra semana
+  // Copiar la programación de una semana entera de un alumno a otra semana (exclusivo Head Coach)
   const copyAthleteWeekPlan = (athleteId, fromWeekKey, toWeekKey) => {
+    if (!isCoachAdmin) {
+      safeLogger.warn('Violación de autorización: Solo el Head Coach puede duplicar semanas de entrenamiento.');
+      return;
+    }
     setWeeklyAthletePlans(prev => {
       const athleteWeeks = prev[athleteId] || {};
       const sourcePlan = athleteWeeks[fromWeekKey] || INITIAL_ATHLETE_PLANS[athleteId] || {};
@@ -387,8 +409,12 @@ export function WorkoutProvider({ children }) {
     celebrateCompletion();
   };
 
-  // Asignar rutina a la programación general del Box (Competidores) para un día y semana específicos
+  // Asignar rutina a la programación general del Box (Competidores) para un día y semana específicos (exclusivo Head Coach)
   const assignBoxWorkoutToDay = (dayId, workoutId, weekKey = selectedWeek) => {
+    if (!isCoachAdmin) {
+      safeLogger.warn('Violación de autorización: Solo el Head Coach puede programar la pizarra de Competitors.');
+      return;
+    }
     setBoxWeeklySchedule(prev => {
       const targetWeek = prev[weekKey] || {};
       return {
@@ -404,8 +430,12 @@ export function WorkoutProvider({ children }) {
     }
   };
 
-  // Copiar la programación de competidores de una semana a otra
+  // Copiar la programación de competidores de una semana a otra (exclusivo Head Coach)
   const copyBoxWeekPlan = (fromWeekKey, toWeekKey) => {
+    if (!isCoachAdmin) {
+      safeLogger.warn('Violación de autorización: Solo el Head Coach puede duplicar la programación del Box.');
+      return;
+    }
     setBoxWeeklySchedule(prev => {
       const sourceWeek = prev[fromWeekKey] || {};
       const populated = { ...sourceWeek };

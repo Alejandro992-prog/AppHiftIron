@@ -7,6 +7,8 @@ import {
   validatePerformanceLogPayload,
   validateReadinessLogPayload,
   validateWorkoutPayload,
+  validateCompletedExercisePayload,
+  validateUserConsentsPayload,
   safeLogger
 } from '../utils/validators';
 
@@ -164,7 +166,7 @@ export async function fetchWeeklyPlansFromSupabase(athleteId = null) {
 }
 
 export async function saveWeeklyPlanInSupabase(athleteId, weekKey, dayId, workoutId) {
-  if (!isSupabaseConfigured || !supabase) return false;
+  if (!isSupabaseConfigured || !supabase || !isValidUuid(athleteId)) return false;
   try {
     const { error } = await supabase
       .from('weekly_athlete_plans')
@@ -594,7 +596,7 @@ export async function registerAthleteInSupabaseAuth({ email, name, role = 'athle
       safeLogger.warn('Edge function invite-athlete devolvió un error:', edgeError);
       return {
         success: false,
-        error: edgeError.message || formatSafeErrorMessage(edgeError, 'No se pudo crear la invitación. Verifica los permisos de administrador.')
+        error: formatSafeErrorMessage(edgeError, 'No se pudo crear la invitación. Verifica los permisos de administrador.')
       };
     }
 
@@ -694,15 +696,9 @@ export async function fetchCompletedExercisesFromSupabase(athleteId) {
 }
 
 export async function upsertCompletedExerciseInSupabase(athleteId, exerciseKey, isCompleted) {
-  if (!isSupabaseConfigured || !supabase || !athleteId) return false;
+  if (!isSupabaseConfigured || !supabase) return false;
   try {
-    const payload = {
-      id: `${athleteId}_${exerciseKey}`,
-      athlete_id: athleteId,
-      exercise_key: exerciseKey,
-      completed: isCompleted,
-      updated_at: new Date().toISOString()
-    };
+    const payload = validateCompletedExercisePayload(athleteId, exerciseKey, isCompleted);
     const { error } = await supabase.from('completed_exercises').upsert(payload);
     if (error) throw error;
     return true;
@@ -714,7 +710,7 @@ export async function upsertCompletedExerciseInSupabase(athleteId, exerciseKey, 
 
 // 11. CONSENTIMIENTOS RGPD EN LA NUBE
 export async function fetchConsentsFromSupabase(athleteId) {
-  if (!isSupabaseConfigured || !supabase || !athleteId) return null;
+  if (!isSupabaseConfigured || !supabase || !isValidUuid(athleteId)) return null;
   try {
     const { data, error } = await supabase
       .from('user_consents')
@@ -740,16 +736,9 @@ export async function fetchConsentsFromSupabase(athleteId) {
 }
 
 export async function upsertConsentsInSupabase(athleteId, consents) {
-  if (!isSupabaseConfigured || !supabase || !athleteId) return false;
+  if (!isSupabaseConfigured || !supabase) return false;
   try {
-    const payload = {
-      athlete_id: athleteId,
-      terms: consents.terms ?? true,
-      health_readiness: Boolean(consents.health_readiness),
-      leaderboard: consents.leaderboard ?? true,
-      policy_version: consents.policyVersion || 'v1.0_2026_ES',
-      updated_at: new Date().toISOString()
-    };
+    const payload = validateUserConsentsPayload(athleteId, consents);
     const { error } = await supabase.from('user_consents').upsert(payload);
     if (error) throw error;
     return true;

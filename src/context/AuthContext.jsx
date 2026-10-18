@@ -233,6 +233,15 @@ export function AuthProvider({ children }) {
   };
 
   const completeProfile = (athleteId, profileData) => {
+    // Proteger contra manipulación: solo el propio atleta o un administrador pueden actualizar el perfil
+    const isSelf = currentUser && currentUser.id === athleteId;
+    const isCoach = currentUser && (currentUser.role === 'admin' || Boolean(coachSessionUser));
+
+    if (!isSelf && !isCoach) {
+      safeLogger.warn('Violación de autorización: No tienes permisos para actualizar este perfil de atleta.');
+      return;
+    }
+
     // Proteger contra escalada de privilegios: los atletas no pueden modificar rol ni zonas
     const { role: _r, accessZones: _az, membership: _m, id: _i, email: _e, ...safeProfileData } = profileData || {};
 
@@ -287,24 +296,34 @@ export function AuthProvider({ children }) {
     return zone === 'traditional';
   };
 
+  const DEFAULT_CONSENTS = Object.freeze({
+    terms: true,
+    health_readiness: false,
+    leaderboard: false, // RGPD Art. 25: Privacidad desde el diseño (Opt-in estricto)
+    policyVersion: 'v1.0_2026_ES'
+  });
+
+  const isEffectiveAdmin = currentUser?.role === 'admin' || Boolean(coachSessionUser);
+
   // RGPD & LOPDGDD Consents helpers
   const getUserConsents = (userId = currentUser?.id) => {
-    if (!userId) return { terms: true, health_readiness: false, leaderboard: true };
-    return consents[userId] || { terms: true, health_readiness: false, leaderboard: true };
+    if (!userId) return { ...DEFAULT_CONSENTS };
+    return consents[userId] || { ...DEFAULT_CONSENTS };
   };
 
-  const updateConsent = (consentKey, value, userId = currentUser?.id) => {
-    if (!userId) return;
+  const updateConsent = async (consentKey, value, userId = currentUser?.id) => {
+    if (!userId) return false;
     const newConsentData = {
-      ...(consents[userId] || { terms: true, health_readiness: false, leaderboard: true }),
+      ...(consents[userId] || DEFAULT_CONSENTS),
       [consentKey]: value,
       updatedAt: new Date().toISOString(),
       policyVersion: 'v1.0_2026_ES'
     };
     setConsents(prev => ({ ...prev, [userId]: newConsentData }));
     if (isSupabaseConfigured) {
-      upsertConsentsInSupabase(userId, newConsentData);
+      return await upsertConsentsInSupabase(userId, newConsentData);
     }
+    return true;
   };
 
   // Portabilidad de Datos (Art. 20 RGPD): Genera y descarga un JSON con todos los datos personales
@@ -357,6 +376,14 @@ export function AuthProvider({ children }) {
     }
 
     if (!userId) return false;
+
+    // Control de acceso: solo el propio titular o un administrador pueden solicitar la supresión
+    const isSelf = currentUser && currentUser.id === userId;
+    if (!isSelf && !isEffectiveAdmin) {
+      safeLogger.warn('Violación de autorización: No tienes permisos para eliminar la cuenta de otro atleta.');
+      return false;
+    }
+
     // Eliminar de lista de atletas
     setAthletes(prev => prev.filter(a => a.id !== userId));
     
@@ -386,6 +413,12 @@ export function AuthProvider({ children }) {
 
   // Previsualizar programación como alumno desde el panel de Coach sin perder la sesión original
   const loginAsAthlete = (athleteId) => {
+    // Verificación de control de acceso: solo administradores pueden suplantar la vista previa
+    if (!isEffectiveAdmin) {
+      safeLogger.warn('Violación de autorización: Se requieren privilegios de Administrador / Head Coach para previsualizar como alumno.');
+      return false;
+    }
+
     const target = athletes.find(a => a.id === athleteId);
     if (target) {
       if (currentUser?.role === 'admin' && !coachSessionUser) {
@@ -415,8 +448,6 @@ export function AuthProvider({ children }) {
     await logoutSupabaseAuth();
     setCurrentUser(null);
   };
-
-  const isEffectiveAdmin = currentUser?.role === 'admin' || Boolean(coachSessionUser);
 
   return (
     <AuthContext.Provider value={{

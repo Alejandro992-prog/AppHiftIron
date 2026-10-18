@@ -48,17 +48,10 @@ function MainApp() {
     return isAdmin ? 'admin' : 'hub';
   });
   const [timerPreset, setTimerPreset] = useState(null);
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      return Boolean(params.get('invite'));
-    } catch {
-      return false;
-    }
-  });
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
 
-  // Clean invite param from URL once handled
+  // Limpiar cualquier parámetro residual de consulta en la URL por privacidad
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);

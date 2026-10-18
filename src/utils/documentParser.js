@@ -194,17 +194,17 @@ export function parseWorkoutText(rawText, defaultDayId = 'mon') {
   let currentSection = null;
 
   // Regex para detectar cabeceras de bloque (soporta A -, A), Bloque A, 1 -, I -)
-  // 1. Warm-up - 8'
-  const warmupRegex = /^(?:warm-?up|calentamiento)(?:\s*[-–:]\s*(\d+)['\s*min]*)?/i;
+  // 1. Warm-up - 8' o A - Warm-up o A. Calentamiento
+  const warmupRegex = /^(?:([A-Z\d]+|[IVX]+)[\s).–-]+\s*)?(?:warm-?up|calentamiento)(?:.*?\b(\d+)\s*['\s*min]*)?/i;
   // 2. A - Every 2'30" x 4 - 10' o A) Every...
   const everyMinSecRegex = /^([A-Z\d]+|[IVX]+)[\s).–-]+\s*every\s*(\d+)'(?:(\d+)"?)?\s*x\s*(\d+)(?:\s*[-–:]\s*(\d+)['\s*min]*)?/i;
   // 3. C - E2MOM x 4 - 8' o EMOM x 4
   const emomRegex = /^([A-Z\d]+|[IVX]+)[\s).–-]+\s*e(\d*)mom\s*x\s*(\d+)(?:\s*[-–:]\s*(\d+)['\s*min]*)?/i;
   // 4. D - Every 90" x 4 - 6'
   const everySecRegex = /^([A-Z\d]+|[IVX]+)[\s).–-]+\s*every\s*(\d+)"\s*x\s*(\d+)(?:\s*[-–:]\s*(\d+)['\s*min]*)?/i;
-  // 5. AMRAP X' o FOR TIME Cap X'
-  const amrapRegex = /^(?:([A-Z\d]+)\s*[-–:)]\s*)?amrap\s*(\d+)['\s*min]*/i;
-  const forTimeRegex = /^(?:([A-Z\d]+)\s*[-–:)]\s*)?for\s*time.*?(?:cap|tiempo)?\s*(\d+)['\s*min]*/i;
+  // 5. AMRAP X' o FOR TIME Cap X' (con A. o A - o directo)
+  const amrapRegex = /^(?:([A-Z\d]+)\s*[-–:.)]\s*)?amrap\s*(\d+)['\s*min]*/i;
+  const forTimeRegex = /^(?:([A-Z\d]+)\s*[-–:.)]\s*)?for\s*time.*?(?:cap|tiempo)?\s*(\d+)['\s*min]*/i;
   // 6. Bloque tradicional / Grupo
   const genericBlockRegex = /^(?:bloque|parte|grupo)\s*([A-Z\d]+)[:\s-]*(.*)/i;
 
@@ -232,10 +232,11 @@ export function parseWorkoutText(rawText, defaultDayId = 'mon') {
     const warmMatch = line.match(warmupRegex);
     if (warmMatch) {
       pushCurrentSection();
-      const minutes = parseInt(warmMatch[1]) || 8;
+      const letter = warmMatch[1] ? warmMatch[1].toUpperCase() : 'W';
+      const minutes = parseInt(warmMatch[2]) || 8;
       currentSection = {
-        name: `Warm-up (${minutes} min)`,
-        blockLetter: 'W',
+        name: warmMatch[1] ? `Bloque ${letter} - Warm-up (${minutes} min)` : `Warm-up (${minutes} min)`,
+        blockLetter: letter,
         duration: `${minutes} min`,
         blockType: 'warmup',
         targetTimerType: 'countdown',

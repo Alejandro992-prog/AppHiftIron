@@ -74,15 +74,15 @@ export default function ReadinessCheckinModal({ isOpen, onClose }) {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!healthConsentGiven) {
       setSaveError('Para registrar datos de bienestar, fatiga o salud física, la Ley de Protección de Datos (RGPD Art. 9) exige tu consentimiento explícito previo.');
       return;
     }
     setSaveError(null);
 
-    // Persist health consent
-    updateConsent('health_readiness', true, currentUser?.id);
+    // Persistir consentimiento de salud atómicamente antes de enviar el log de fatiga
+    await updateConsent('health_readiness', true, currentUser?.id);
 
     const isLimitedOrLow = evaluation.finalState === 'limited' || evaluation.finalState === 'low';
 

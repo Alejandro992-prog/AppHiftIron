@@ -125,3 +125,21 @@ export const WorkoutPayloadSchema = z.object({
   sections: z.array(SectionSchema).max(20).default([]),
   updated_at: cleanText(50).optional()
 });
+
+export const CompletedExercisePayloadSchema = z.object({
+  id: cleanText(250),
+  athlete_id: UuidSchema,
+  exercise_key: cleanText(200).refine((val) => val.length > 0, 'La clave del ejercicio es obligatoria'),
+  completed: z.boolean().default(true),
+  updated_at: cleanText(50).optional()
+});
+
+export const UserConsentsPayloadSchema = z.object({
+  athlete_id: UuidSchema,
+  terms: z.boolean().default(true),
+  health_readiness: z.boolean().default(false),
+  leaderboard: z.boolean().default(false),
+  policy_version: cleanText(50).default('v1.0_2026_ES'),
+  updated_at: cleanText(50).optional()
+});
+

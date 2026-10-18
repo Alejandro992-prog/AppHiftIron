@@ -159,7 +159,7 @@ BEGIN
   SELECT role INTO v_role FROM public.athletes WHERE id = auth.uid();
   RETURN COALESCE(v_role = 'admin', FALSE);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, auth, pg_temp STABLE;
 
 -- ============================================================================
 -- 13. SEGURIDAD: PREVENCIÓN DE ENUMERACIÓN DE EMAILS
@@ -201,7 +201,7 @@ BEGIN
   NEW.updated_at := NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, auth, pg_temp;
 
 DROP TRIGGER IF EXISTS tr_protect_athlete_role ON public.athletes;
 CREATE TRIGGER tr_protect_athlete_role
@@ -226,7 +226,7 @@ BEGIN
   WHERE id = NEW.id;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, auth, pg_temp;
 
 DROP TRIGGER IF EXISTS tr_sync_athlete_role_to_auth ON public.athletes;
 CREATE TRIGGER tr_sync_athlete_role_to_auth
@@ -239,6 +239,11 @@ RETURNS BOOLEAN AS $$
 DECLARE
   v_user_id UUID;
 BEGIN
+  -- 1. Validación estricta de autorización: Solo service_role o un admin existente pueden promover
+  IF auth.role() <> 'service_role' AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acceso denegado: únicamente administradores autenticados pueden promover otros usuarios.';
+  END IF;
+
   SELECT id INTO v_user_id FROM auth.users WHERE lower(email) = lower(trim(target_email));
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'Usuario con email % no encontrado.', target_email;
@@ -258,7 +263,10 @@ BEGIN
 
   RETURN TRUE;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, auth, pg_temp;
+
+REVOKE ALL ON FUNCTION public.promote_user_to_admin(TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.promote_user_to_admin(TEXT) TO service_role;
 
 -- ============================================================================
 -- 14b. FUNCIÓN SEGURA: DERECHO AL OLVIDO Y SUPRESIÓN DE CUENTA PROPIA (RGPD ART. 17)
@@ -273,11 +281,16 @@ BEGIN
     RAISE EXCEPTION 'Usuario no autenticado.';
   END IF;
 
+  -- Impedir que un administrador se autodestruya mediante la autogestión de atleta
+  IF EXISTS (SELECT 1 FROM public.athletes WHERE id = v_user_id AND role = 'admin') THEN
+    RAISE EXCEPTION 'Acción denegada: una cuenta de Administrador / Head Coach no puede ser eliminada mediante la autogestión de usuario. Contacta con soporte técnico.';
+  END IF;
+
   -- Borrar de auth.users (cascada hacia public.athletes, logs, prs, etc.)
   DELETE FROM auth.users WHERE id = v_user_id;
   RETURN TRUE;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, auth, pg_temp;
 
 REVOKE ALL ON FUNCTION public.delete_own_account() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.delete_own_account() TO authenticated;
@@ -307,10 +320,31 @@ BEGIN
   DELETE FROM auth.users WHERE id = target_athlete_id;
   RETURN TRUE;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, auth, pg_temp;
 
 REVOKE ALL ON FUNCTION public.admin_delete_athlete(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.admin_delete_athlete(UUID) TO authenticated;
+
+-- ============================================================================
+-- 14d. TRIGGER: PREVENIR BORRADO DIRECTO EN public.athletes (PREVENCIÓN DE HUÉRFANOS)
+-- ============================================================================
+-- Garantiza que las bajas siempre se sincronicen purgando auth.users primero
+CREATE OR REPLACE FUNCTION public.prevent_direct_athlete_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Permitir si la llamada proviene de service_role o de una cascada activa (pg_trigger_depth > 1)
+  IF auth.role() = 'service_role' OR current_setting('pg_trigger_depth', true)::int > 1 THEN
+    RETURN OLD;
+  END IF;
+
+  RAISE EXCEPTION 'Operación no permitida: las bajas de atletas deben realizarse mediante la función segura admin_delete_athlete o delete_own_account.';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, auth, pg_temp;
+
+DROP TRIGGER IF EXISTS tr_prevent_direct_athlete_delete ON public.athletes;
+CREATE TRIGGER tr_prevent_direct_athlete_delete
+  BEFORE DELETE ON public.athletes
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_direct_athlete_delete();
 
 -- ============================================================================
 -- 15. TRIGGER: CREAR PERFIL DE ATLETA AUTOMÁTICAMENTE AL CREAR USUARIO EN AUTH
@@ -367,7 +401,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, auth, pg_temp;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -479,9 +513,6 @@ CREATE POLICY "prs_delete" ON public.prs
 -- F. LOGS DE RENDIMIENTO
 DROP POLICY IF EXISTS "Public access for performance_logs" ON public.performance_logs;
 DROP POLICY IF EXISTS "perf_logs_select" ON public.performance_logs;
-CREATE POLICY "perf_logs_select" ON public.performance_logs
-  FOR SELECT TO authenticated USING (athlete_id = auth.uid() OR public.is_admin());
-
 DROP POLICY IF EXISTS "perf_logs_manage" ON public.performance_logs;
 CREATE POLICY "perf_logs_manage" ON public.performance_logs
   FOR ALL TO authenticated USING (athlete_id = auth.uid() OR public.is_admin()) WITH CHECK (athlete_id = auth.uid() OR public.is_admin());
@@ -508,11 +539,6 @@ DROP POLICY IF EXISTS "readiness_insert" ON public.readiness_logs;
 CREATE POLICY "readiness_insert" ON public.readiness_logs
   FOR INSERT TO authenticated WITH CHECK (
     athlete_id = auth.uid()
-    AND EXISTS (
-      SELECT 1 FROM public.user_consents
-      WHERE public.user_consents.athlete_id = auth.uid()
-      AND public.user_consents.health_readiness = TRUE
-    )
   );
 
 DROP POLICY IF EXISTS "readiness_update" ON public.readiness_logs;
@@ -526,9 +552,6 @@ CREATE POLICY "readiness_delete" ON public.readiness_logs
 -- H. EJERCICIOS COMPLETADOS
 DROP POLICY IF EXISTS "Public access for completed_exercises" ON public.completed_exercises;
 DROP POLICY IF EXISTS "completed_ex_select" ON public.completed_exercises;
-CREATE POLICY "completed_ex_select" ON public.completed_exercises
-  FOR SELECT TO authenticated USING (athlete_id = auth.uid() OR public.is_admin());
-
 DROP POLICY IF EXISTS "completed_ex_manage" ON public.completed_exercises;
 CREATE POLICY "completed_ex_manage" ON public.completed_exercises
   FOR ALL TO authenticated USING (athlete_id = auth.uid() OR public.is_admin()) WITH CHECK (athlete_id = auth.uid() OR public.is_admin());
@@ -579,8 +602,30 @@ CREATE POLICY "reservations_insert" ON public.reservations
 
 DROP POLICY IF EXISTS "reservations_update" ON public.reservations;
 CREATE POLICY "reservations_update" ON public.reservations
-  FOR UPDATE TO authenticated USING (athlete_id = auth.uid() OR public.is_admin())
-  WITH CHECK (athlete_id = auth.uid() OR public.is_admin());
+  FOR UPDATE TO authenticated 
+  USING (
+    public.is_admin() 
+    OR (athlete_id = auth.uid() AND reservation_date >= CURRENT_DATE)
+  )
+  WITH CHECK (
+    public.is_admin()
+    OR (
+      athlete_id = auth.uid()
+      AND reservation_date >= CURRENT_DATE
+      AND status IN ('confirmed', 'cancelled')
+      AND (
+        zone = 'traditional'
+        OR (
+          zone = 'competitors'
+          AND EXISTS (
+            SELECT 1 FROM public.athletes 
+            WHERE id = auth.uid() 
+            AND access_zones ? 'competitors'
+          )
+        )
+      )
+    )
+  );
 
 DROP POLICY IF EXISTS "reservations_delete" ON public.reservations;
 CREATE POLICY "reservations_delete" ON public.reservations
@@ -599,6 +644,12 @@ REVOKE ALL ON public.performance_logs FROM anon;
 REVOKE ALL ON public.reservations FROM anon;
 REVOKE ALL ON public.weekly_athlete_plans FROM anon;
 REVOKE ALL ON public.completed_exercises FROM anon;
+
+-- Revocar funciones RPC críticas a anon y authenticated
+REVOKE EXECUTE ON FUNCTION public.is_admin() FROM anon;
+REVOKE ALL ON FUNCTION public.promote_user_to_admin(TEXT) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.delete_own_account() FROM anon;
+REVOKE ALL ON FUNCTION public.admin_delete_athlete(UUID) FROM anon;
 
 -- ============================================================================
 -- 19. INTEGRIDAD Y VALIDACIÓN EN EL SERVIDOR (CHECK CONSTRAINTS)
@@ -663,5 +714,24 @@ DO $$ BEGIN
     ) NOT VALID;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- ============================================================================
+-- 20. VALIDACIÓN FORMAL DE RESTRICCIONES (INTEGRIDAD DE DATOS DEFENSIVA)
+-- ============================================================================
+DO $$ BEGIN
+  ALTER TABLE public.athletes VALIDATE CONSTRAINT athletes_role_chk;
+  ALTER TABLE public.athletes VALIDATE CONSTRAINT athletes_len_chk;
+  ALTER TABLE public.workouts VALIDATE CONSTRAINT workouts_chk;
+  ALTER TABLE public.prs VALIDATE CONSTRAINT prs_chk;
+  ALTER TABLE public.performance_logs VALIDATE CONSTRAINT perf_chk;
+  ALTER TABLE public.readiness_logs VALIDATE CONSTRAINT readiness_chk;
+  ALTER TABLE public.completed_exercises VALIDATE CONSTRAINT completed_chk;
+  ALTER TABLE public.weekly_athlete_plans VALIDATE CONSTRAINT wap_day_chk;
+  ALTER TABLE public.box_weekly_schedules VALIDATE CONSTRAINT bws_day_chk;
+  ALTER TABLE public.reservations VALIDATE CONSTRAINT reservations_chk;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
 
 

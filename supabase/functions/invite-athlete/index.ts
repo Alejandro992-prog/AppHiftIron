@@ -3,17 +3,46 @@ declare const Deno: any;
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { z } from 'npm:zod@3';
 
-const APP_ORIGIN = Deno.env.get('APP_ORIGIN') || '*';
-const corsHeaders = {
-  'Access-Control-Allow-Origin': APP_ORIGIN,
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+const rawAllowedOrigin = Deno.env.get('APP_ORIGIN');
+
+/**
+ * Validador estricto de origen CORS (Fail-secure):
+ * Evita la exposición de endpoints administrativos mediante wildcard '*'
+ */
+const LOCALHOST_ORIGIN_REGEX = /^http:\/\/(localhost|127\.0\.0\.1)(:[0-9]{2,5})?$/;
+
+const getAllowedOrigin = (requestOrigin: string | null): string => {
+  if (rawAllowedOrigin) {
+    const allowedList = rawAllowedOrigin.split(',').map((o: string) => o.trim().replace(/\/+$/, ''));
+    if (requestOrigin) {
+      const cleanReqOrigin = requestOrigin.trim().replace(/\/+$/, '');
+      if (allowedList.includes(cleanReqOrigin)) {
+        return cleanReqOrigin;
+      }
+    }
+    return allowedList[0] || 'null';
+  }
+
+  // Fallback seguro si APP_ORIGIN no está definido en secrets:
+  // Solo permitir localhost / 127.0.0.1 en entornos locales de desarrollo.
+  // En producción sin APP_ORIGIN definido, retornar 'null' para forzar fail-secure.
+  if (requestOrigin && LOCALHOST_ORIGIN_REGEX.test(requestOrigin)) {
+    return requestOrigin;
+  }
+  return 'null';
 };
 
-const jsonResponse = (body: unknown, status = 200) =>
+const getCorsHeaders = (req: Request) => ({
+  'Access-Control-Allow-Origin': getAllowedOrigin(req.headers.get('Origin')),
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Vary': 'Origin',
+});
+
+const jsonResponse = (req: Request, body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
   });
 
 const InvitePayloadSchema = z.object({
@@ -23,21 +52,21 @@ const InvitePayloadSchema = z.object({
   focus: z.string().trim().max(100).optional(),
 }).strict();
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   // Manejo de preflight CORS
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers: getCorsHeaders(req) });
   }
 
   if (req.method !== 'POST') {
-    return jsonResponse({ error: 'Método no permitido' }, 405);
+    return jsonResponse(req, { error: 'Método no permitido' }, 405);
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse({ error: 'Configuración interna incompleta en el servidor' }, 500);
+    return jsonResponse(req, { error: 'Configuración interna incompleta en el servidor' }, 500);
   }
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -49,12 +78,12 @@ Deno.serve(async (req) => {
   const jwt = authHeader?.replace(/^Bearer\s+/i, '');
 
   if (!jwt) {
-    return jsonResponse({ error: 'No autenticado' }, 401);
+    return jsonResponse(req, { error: 'No autenticado' }, 401);
   }
 
   const { data: { user }, error: authError } = await adminClient.auth.getUser(jwt);
   if (authError || !user) {
-    return jsonResponse({ error: 'Sesión no válida o expirada' }, 401);
+    return jsonResponse(req, { error: 'Sesión no válida o expirada' }, 401);
   }
 
   // 2. Validar privilegios de administrador en app_metadata o public.athletes
@@ -68,7 +97,7 @@ Deno.serve(async (req) => {
 
     if (dbAthlete?.role === 'admin') {
       isCoachAdmin = true;
-      // Autosanar app_metadata para futuras peticiones
+      // Sincronizar app_metadata para futuras peticiones
       await adminClient.auth.admin.updateUserById(user.id, {
         app_metadata: { role: 'admin' }
       });
@@ -76,7 +105,7 @@ Deno.serve(async (req) => {
   }
 
   if (!isCoachAdmin) {
-    return jsonResponse({ error: 'Acceso denegado: solo el Head Coach puede invitar atletas' }, 403);
+    return jsonResponse(req, { error: 'Acceso denegado: solo el Head Coach puede invitar atletas' }, 403);
   }
 
   // 3. Validar payload recibido con Zod
@@ -84,7 +113,7 @@ Deno.serve(async (req) => {
   const parsed = InvitePayloadSchema.safeParse(rawBody);
 
   if (!parsed.success) {
-    return jsonResponse({
+    return jsonResponse(req, {
       error: parsed.error.issues[0]?.message || 'Datos no válidos'
     }, 400);
   }
@@ -95,15 +124,18 @@ Deno.serve(async (req) => {
   const membership = isCompetitor ? 'CrossFit Competitors' : 'Gimnasio Fitness';
 
   // 4. Invitar al usuario mediante el sistema oficial seguro de invitaciones de Supabase Auth
-  // El atleta recibirá un enlace criptoseguro para elegir su propia contraseña
+  const reqOrigin = req.headers.get('Origin');
+  const validOrigin = getAllowedOrigin(reqOrigin);
+  const redirectTarget = validOrigin !== 'null' ? `${validOrigin.replace(/\/+$/, '')}/` : undefined;
+
   const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
     data: { name },
-    redirectTo: APP_ORIGIN !== '*' ? `${APP_ORIGIN}/` : undefined,
+    redirectTo: redirectTarget,
   });
 
   if (inviteError || !inviteData.user) {
     console.error('[invite-athlete error]:', inviteError);
-    return jsonResponse({ error: 'No se pudo crear la invitación para este correo.' }, 400);
+    return jsonResponse(req, { error: 'No se pudo crear la invitación para este correo.' }, 400);
   }
 
   const newUserId = inviteData.user.id;
@@ -127,7 +159,7 @@ Deno.serve(async (req) => {
     })
     .eq('id', newUserId);
 
-  return jsonResponse({
+  return jsonResponse(req, {
     success: true,
     id: newUserId,
     email: email,

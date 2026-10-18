@@ -339,7 +339,7 @@ export default function PrivacyAndDataModal({ isOpen, onClose }) {
 
                 <input
                   type="checkbox"
-                  checked={consents.leaderboard !== false}
+                  checked={Boolean(consents.leaderboard)}
                   onChange={(e) => updateConsent('leaderboard', e.target.checked)}
                   style={{
                     width: '20px',

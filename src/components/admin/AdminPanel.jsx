@@ -89,8 +89,9 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
   const loggedTodayCount = athletesWithReadiness.filter(a => a.readiness !== null).length;
 
   const handleCopyLink = (athlete) => {
-    const link = athlete.inviteLink || `${window.location.origin}/?invite=${athlete.id}`;
-    navigator.clipboard.writeText(link);
+    // Copiar la URL oficial del Box
+    const portalUrl = window.location.origin;
+    navigator.clipboard.writeText(portalUrl);
     setCopiedId(athlete.id);
     setTimeout(() => setCopiedId(null), 2500);
   };
@@ -829,7 +830,7 @@ export default function AdminPanel({ onNavigateToRoutine, onSwitchToStudentView 
                       }}
                     >
                       {copiedId === athlete.id ? <Check size={12} /> : <Copy size={12} />}
-                      <span>{copiedId === athlete.id ? '¡Enlace Copiado!' : 'Copiar Enlace de Alta'}</span>
+                      <span>{copiedId === athlete.id ? '¡URL Copiada!' : 'Copiar URL de Acceso'}</span>
                     </button>
 
                     <button
