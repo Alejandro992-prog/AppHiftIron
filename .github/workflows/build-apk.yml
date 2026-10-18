@@ -25,11 +25,12 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: Configure Android SDK and permissions
+      - name: Configure Android SDK and install Platform 36
         run: |
           chmod +x android/gradlew
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-          yes | sdkmanager --licenses || true
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" || true
 
       - name: Install dependencies
         run: npm install
